@@ -8,6 +8,35 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum CourseVisibility {
+  DRAFT
+  PRIVATE
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LessonType {
+  VIDEO
+  ARTICLE
+  QUIZ
+  ASSIGNMENT
+  LIVE
+  OTHER
+}
+
+enum QuizAttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  GRADED
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  RETURNED
+  GRADED
+}
+
 model Account {
   id         String   @id @default(cuid())
   created_at DateTime @default(now())
@@ -76,12 +105,18 @@ model User {
   receiver_notifications    Notification[] @relation("receiver")
   sender_notifications      Notification[] @relation("sender")
 
-  user_payment_methods UserPaymentMethod[]
-  user_settings        UserSetting[]
-  ucodes               Ucode[]
-  roles                Role[]
-  role_users           RoleUser[]
-  payment_transactions PaymentTransaction[]
+  user_payment_methods   UserPaymentMethod[]
+  user_settings          UserSetting[]
+  ucodes                 Ucode[]
+  roles                  Role[]
+  role_users             RoleUser[]
+  payment_transactions   PaymentTransaction[]
+  quiz_attempts          QuizAttempt[]
+  assignment_submissions AssignmentSubmission[]
+  graded_submissions     AssignmentSubmission[] @relation("SubmissionGrader")
+  enrollments            Enrollment[]
+  user_progress          UserProgress[]
+  certificates           Certificate[]
 
   @@map("users")
 }
@@ -434,3 +469,406 @@ model UserSetting {
 //   tenant    Organization? @relation(fields: [tenant_id], references: [id], onDelete: Cascade)
 //   @@map("posts")
 // }
+
+// ---------- Languages ----------
+model Language {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  name String
+  code String @unique
+
+  courses Course[]
+
+  @@map("languages")
+}
+
+// ---------- Content ----------
+model Course {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  title         String
+  slug          String           @unique
+  summary       String?
+  description   String?
+  visibility    CourseVisibility @default(DRAFT)
+  estimated_min Int?
+  thumbnail     String?
+  metadata      Json?
+  price         Decimal?
+
+  language_id String?
+  language    Language? @relation(fields: [language_id], references: [id])
+
+  sections      CourseSection[]
+  lessons       Lesson[]
+  media         MediaAsset[]
+  quizzes       Quiz[]
+  assignments   Assignment[]
+  enrollments   Enrollment[]
+  user_progress UserProgress[]
+  certificates  Certificate[]
+
+  @@map("courses")
+}
+
+model CourseSection {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  course_id String
+  course    Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  title    String
+  position Int    @default(0)
+
+  lessons Lesson[]
+
+  @@index([course_id, position])
+  @@map("course_sections")
+}
+
+model Lesson {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  course_id    String
+  section_id   String?
+  title        String
+  slug         String
+  type         LessonType @default(VIDEO)
+  content      Json?
+  duration_sec Int?
+  position     Int        @default(0)
+  metadata     Json?
+
+  course  Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  section CourseSection? @relation(fields: [section_id], references: [id], onDelete: SetNull)
+
+  media         MediaAsset[]
+  quizzes       Quiz[]
+  assignments   Assignment[]
+  user_progress UserProgress[]
+
+  @@unique([course_id, slug])
+  @@index([course_id, position])
+  @@map("lessons")
+}
+
+model MediaAsset {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  course_id String?
+  lesson_id String?
+  url       String
+  kind      String  @default("video") // "image","video","pdf","slides"
+  alt       String?
+  position  Int     @default(0)
+
+  course Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  lesson Lesson? @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+
+  @@index([course_id])
+  @@index([lesson_id])
+  @@map("media_assets")
+}
+
+// ---------- Assessment: Quiz ----------
+model Quiz {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  course_id    String
+  lesson_id    String?
+  title        String
+  instructions String?
+  total_marks  Int     @default(0)
+
+  due_at       DateTime?
+  is_published Boolean   @default(false)
+  published_at DateTime?
+  metadata     Json?
+
+  course    Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  lesson    Lesson?        @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+  questions QuizQuestion[]
+  attempts  QuizAttempt[]
+
+  @@map("quizzes")
+}
+
+model QuizQuestion {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  quiz_id  String
+  prompt   String
+  points   Int    @default(1)
+  position Int    @default(0)
+
+  // single correct option (dropdown)
+  correct_option_id String?
+  correct_option    QuizQuestionOption? @relation("QuestionCorrectOption", fields: [correct_option_id], references: [id])
+
+  quiz    Quiz                 @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  options QuizQuestionOption[] @relation("QuestionOptions")
+  answers QuizAnswer[]
+
+  @@index([quiz_id, position])
+  @@map("quiz_questions")
+}
+
+model QuizQuestionOption {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  question_id String
+  question    QuizQuestion   @relation("QuestionOptions", fields: [question_id], references: [id], onDelete: Cascade)
+  correct_for QuizQuestion[] @relation("QuestionCorrectOption")
+  selected_in QuizAnswer[]
+
+  option   String
+  position Int    @default(0) // determines A/B/C… label
+
+  @@unique([question_id, position])
+  @@index([question_id, position])
+  @@map("quiz_question_options")
+}
+
+model QuizAttempt {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  quiz_id      String
+  user_id      String
+  status       QuizAttemptStatus @default(IN_PROGRESS)
+  score        Int               @default(0)
+  started_at   DateTime          @default(now())
+  submitted_at DateTime?
+
+  quiz    Quiz         @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  answers QuizAnswer[]
+
+  @@index([user_id, quiz_id])
+  @@map("quiz_attempts")
+}
+
+model QuizAnswer {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  attempt_id         String
+  question_id        String
+  selected_option_id String
+
+  correct       Boolean
+  marks_awarded Int     @default(0)
+
+  attempt         QuizAttempt        @relation(fields: [attempt_id], references: [id], onDelete: Cascade)
+  question        QuizQuestion       @relation(fields: [question_id], references: [id], onDelete: Cascade)
+  selected_option QuizQuestionOption @relation(fields: [selected_option_id], references: [id], onDelete: Cascade)
+
+  @@unique([attempt_id, question_id]) // one answer per question per attempt
+  @@map("quiz_answers")
+}
+
+// ---------- Assessment: Assignment (Essay) ----------
+model Assignment {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  course_id   String
+  lesson_id   String?
+  title       String?
+  description String?
+
+  due_at       DateTime?
+  is_published Boolean   @default(false)
+  published_at DateTime?
+
+  course      Course                 @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  lesson      Lesson?                @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+  questions   AssignmentQuestion[]
+  submissions AssignmentSubmission[]
+
+  @@map("assignments")
+}
+
+model AssignmentQuestion {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  assignment_id String
+  title         String
+  points        Int    @default(0)
+  position      Int    @default(0)
+
+  assignment Assignment         @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  answers    AssignmentAnswer[]
+
+  @@index([assignment_id, position])
+  @@map("assignment_questions")
+}
+
+model AssignmentSubmission {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  assignment_id    String
+  user_id          String
+  status           SubmissionStatus @default(DRAFT)
+  total_marks      Int              @default(0)
+  overall_feedback String?
+  graded_by_id     String?
+  graded_at        DateTime?
+
+  assignment Assignment             @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  learner    User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  graded_by  User?                  @relation("SubmissionGrader", fields: [graded_by_id], references: [id], onDelete: SetNull)
+  answers    AssignmentAnswer[]
+  files      SubmissionAttachment[]
+
+  @@unique([assignment_id, user_id]) // one submission per learner
+  @@index([assignment_id, status])
+  @@map("assignment_submissions")
+}
+
+model AssignmentAnswer {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  submission_id String
+  question_id   String
+  answer_text   String? @db.Text
+  marks_awarded Int     @default(0)
+  feedback      String?
+
+  submission AssignmentSubmission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  question   AssignmentQuestion   @relation(fields: [question_id], references: [id], onDelete: Cascade)
+
+  @@unique([submission_id, question_id])
+  @@map("assignment_answers")
+}
+
+model SubmissionAttachment {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  submission_id String
+  url           String
+  name          String?
+
+  submission AssignmentSubmission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+
+  @@map("submission_attachments")
+}
+
+// ===== ENROLLMENT & PROGRESS =====
+enum EnrollmentStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+model Enrollment {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+
+  user_id   String
+  course_id String
+
+  status       EnrollmentStatus @default(ACTIVE)
+  enrolled_at  DateTime         @default(now())
+  completed_at DateTime?
+  expires_at   DateTime?
+
+  // Progress tracking
+  progress_percentage Int       @default(0)
+  last_accessed_at    DateTime?
+
+  // Relations
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+  @@map("enrollments")
+}
+
+model UserProgress {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+
+  user_id   String
+  course_id String
+  lesson_id String?
+
+  // Progress
+  is_completed  Boolean   @default(false)
+  completed_at  DateTime?
+  time_spent    Int? // Time spent in seconds
+  last_position Int? // Video/audio position
+
+  // Relations
+  user   User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course  @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  lesson Lesson? @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+
+  @@unique([user_id, course_id, lesson_id])
+  @@map("user_progress")
+}
+
+// ===== CERTIFICATES =====
+model Certificate {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+
+  user_id   String
+  course_id String
+
+  // Certificate Details
+  certificate_number String    @unique
+  issued_at          DateTime  @default(now())
+  expires_at         DateTime?
+
+  // Relations
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+  @@map("certificates")
+}
