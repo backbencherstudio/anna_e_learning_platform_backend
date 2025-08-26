@@ -498,6 +498,8 @@ model Course {
   description   String?
   visibility    CourseVisibility @default(DRAFT)
   estimated_min Int?
+  start_date    DateTime?
+  end_date      DateTime?
   thumbnail     String?
   metadata      Json?
   price         Decimal?
