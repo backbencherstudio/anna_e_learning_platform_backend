@@ -76,6 +76,11 @@ export default () => ({
     websiteInfo: '/website-info/',
     // chat
     attachment: '/attachment/',
+    // course
+    course_media: '/course/media/',
+    course_thumbnail: '/course/thumbnail/',
+    lesson_media: '/lesson/media/',
+    section_media: '/section/media/',
   },
 
   defaultUser: {

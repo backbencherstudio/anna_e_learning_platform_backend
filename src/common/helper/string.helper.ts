@@ -104,4 +104,31 @@ export class StringHelper {
         return input + padding;
     }
   }
+
+  /**
+   * Convert a string to a URL-friendly slug
+   * @param text - The text to convert to slug
+   * @returns URL-friendly slug
+   */
+  public static slugify(text: string): string {
+    return text
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, '') // Remove special characters except spaces and hyphens
+      .replace(/[\s_-]+/g, '-') // Replace spaces and underscores with hyphens
+      .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+  }
+
+  /**
+   * Generate a random file name
+   * @param originalName - The original file name
+   * @returns Random file name
+   */
+  public static generateRandomFileName(originalName: string): string {
+    const randomName = Array(32)
+      .fill(null)
+      .map(() => Math.round(Math.random() * 16).toString(16))
+      .join('');
+    return `${randomName}-${originalName}`;
+  }
 }
