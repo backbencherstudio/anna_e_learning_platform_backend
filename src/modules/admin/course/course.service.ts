@@ -239,16 +239,6 @@ export class CourseService {
                 code: true,
               },
             },
-            sections: {
-              select: {
-                id: true,
-                title: true,
-                position: true,
-                created_at: true,
-                updated_at: true,
-              },
-              orderBy: { position: 'asc' },
-            },
             media: {
               select: {
                 id: true,
@@ -260,36 +250,46 @@ export class CourseService {
               },
               orderBy: { position: 'asc' },
             },
-            lessons: {
-              select: {
-                id: true,
-                title: true,
-                slug: true,
-                type: true,
-                duration_sec: true,
-                position: true,
-                created_at: true,
-                updated_at: true,
-                section: {
-                  select: {
-                    id: true,
-                    title: true,
-                    position: true,
-                  },
-                },
-                media: {
-                  select: {
-                    id: true,
-                    url: true,
-                    kind: true,
-                    alt: true,
-                    position: true,
-                  },
-                  orderBy: { position: 'asc' },
-                },
-              },
-              orderBy: { position: 'asc' },
-            },
+            // sections: {
+            //   select: {
+            //     id: true,
+            //     title: true,
+            //     position: true,
+            //     created_at: true,
+            //     updated_at: true,
+            //   },
+            //   orderBy: { position: 'asc' },
+            // },
+            // lessons: {
+            //   select: {
+            //     id: true,
+            //     title: true,
+            //     slug: true,
+            //     type: true,
+            //     duration_sec: true,
+            //     position: true,
+            //     created_at: true,
+            //     updated_at: true,
+            //     section: {
+            //       select: {
+            //         id: true,
+            //         title: true,
+            //         position: true,
+            //       },
+            //     },
+            //     media: {
+            //       select: {
+            //         id: true,
+            //         url: true,
+            //         kind: true,
+            //         alt: true,
+            //         position: true,
+            //       },
+            //       orderBy: { position: 'asc' },
+            //     },
+            //   },
+            //   orderBy: { position: 'asc' },
+            // },
           },
           orderBy: { created_at: 'desc' },
         }),
@@ -313,17 +313,17 @@ export class CourseService {
             }
           }
         }
-        if (course.lessons && course.lessons.length > 0) {
-          for (const lesson of course.lessons) {
-            if (lesson.media && lesson.media.length > 0) {
-              for (const media of lesson.media) {
-                if (media.url) {
-                  media['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_media + media.url);
-                }
-              }
-            }
-          }
-        }
+        // if (course.lessons && course.lessons.length > 0) {
+        //   for (const lesson of course.lessons) {
+        //     if (lesson.media && lesson.media.length > 0) {
+        //       for (const media of lesson.media) {
+        //         if (media.url) {
+        //           media['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_media + media.url);
+        //         }
+        //       }
+        //     }
+        //   }
+        // }
       }
 
       return {

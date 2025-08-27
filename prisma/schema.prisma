@@ -111,7 +111,6 @@ model User {
   roles                  Role[]
   role_users             RoleUser[]
   payment_transactions   PaymentTransaction[]
-  quiz_attempts          QuizAttempt[]
   assignment_submissions AssignmentSubmission[]
   graded_submissions     AssignmentSubmission[] @relation("SubmissionGrader")
   enrollments            Enrollment[]
@@ -608,7 +607,6 @@ model Quiz {
   course    Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
   lesson    Lesson?        @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
   questions QuizQuestion[]
-  attempts  QuizAttempt[]
 
   @@map("quizzes")
 }
@@ -623,28 +621,21 @@ model QuizQuestion {
   points   Int    @default(1)
   position Int    @default(0)
 
-  // single correct option (dropdown)
-  correct_option_id String?
-  correct_option    QuizQuestionOption? @relation("QuestionCorrectOption", fields: [correct_option_id], references: [id])
-
-  quiz    Quiz                 @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
-  options QuizQuestionOption[] @relation("QuestionOptions")
-  answers QuizAnswer[]
+  quiz    Quiz             @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  answers QuestionAnswer[] @relation("QuestionAnswer")
 
   @@index([quiz_id, position])
   @@map("quiz_questions")
 }
 
-model QuizQuestionOption {
-  id         String    @id @default(cuid())
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime?
-
+model QuestionAnswer {
+  id          String       @id @default(cuid())
+  created_at  DateTime     @default(now())
+  updated_at  DateTime     @updatedAt
+  deleted_at  DateTime?
+  is_correct  Boolean      @default(false)
   question_id String
-  question    QuizQuestion   @relation("QuestionOptions", fields: [question_id], references: [id], onDelete: Cascade)
-  correct_for QuizQuestion[] @relation("QuestionCorrectOption")
-  selected_in QuizAnswer[]
+  question    QuizQuestion @relation("QuestionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
 
   option   String
   position Int    @default(0) // determines A/B/C… label
@@ -652,47 +643,6 @@ model QuizQuestionOption {
   @@unique([question_id, position])
   @@index([question_id, position])
   @@map("quiz_question_options")
-}
-
-model QuizAttempt {
-  id         String    @id @default(cuid())
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime?
-
-  quiz_id      String
-  user_id      String
-  status       QuizAttemptStatus @default(IN_PROGRESS)
-  score        Int               @default(0)
-  started_at   DateTime          @default(now())
-  submitted_at DateTime?
-
-  quiz    Quiz         @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
-  user    User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  answers QuizAnswer[]
-
-  @@index([user_id, quiz_id])
-  @@map("quiz_attempts")
-}
-
-model QuizAnswer {
-  id         String   @id @default(cuid())
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-
-  attempt_id         String
-  question_id        String
-  selected_option_id String
-
-  correct       Boolean
-  marks_awarded Int     @default(0)
-
-  attempt         QuizAttempt        @relation(fields: [attempt_id], references: [id], onDelete: Cascade)
-  question        QuizQuestion       @relation(fields: [question_id], references: [id], onDelete: Cascade)
-  selected_option QuizQuestionOption @relation(fields: [selected_option_id], references: [id], onDelete: Cascade)
-
-  @@unique([attempt_id, question_id]) // one answer per question per attempt
-  @@map("quiz_answers")
 }
 
 // ---------- Assessment: Assignment (Essay) ----------
