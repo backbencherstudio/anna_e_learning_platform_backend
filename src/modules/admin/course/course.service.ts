@@ -66,6 +66,7 @@ export class CourseService {
             thumbnail: createCourseDto.thumbnail,
             price: createCourseDto.price,
             language_id: createCourseDto.language_id,
+            series_id: createCourseDto.series_id,
           },
         });
 
@@ -250,6 +251,12 @@ export class CourseService {
               },
               orderBy: { position: 'asc' },
             },
+            series: {
+              select: {
+                id: true,
+                title: true,
+              },
+            },
             // sections: {
             //   select: {
             //     id: true,
@@ -422,6 +429,7 @@ export class CourseService {
               },
             },
           },
+          series: true,
           quizzes: true,
           assignments: true,
           _count: {

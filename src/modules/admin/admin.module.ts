@@ -8,6 +8,7 @@ import { NotificationModule } from './notification/notification.module';
 import { CourseModule } from './course/course.module';
 import { QuizModule } from './quiz/quiz.module';
 import { AssignmentModule } from './assignment/assignment.module';
+import { SeriesModule } from './series/series.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AssignmentModule } from './assignment/assignment.module';
     CourseModule,
     QuizModule,
     AssignmentModule,
+    SeriesModule,
   ],
 })
 export class AdminModule {}

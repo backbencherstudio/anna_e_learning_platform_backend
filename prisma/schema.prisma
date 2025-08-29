@@ -485,6 +485,21 @@ model Language {
 }
 
 // ---------- Content ----------
+
+model Series {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  title         String
+  description   String?
+  thumbnail     String?
+  estimated_min Int?
+
+  courses Course[]
+}
+
 model Course {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
@@ -505,6 +520,9 @@ model Course {
 
   language_id String?
   language    Language? @relation(fields: [language_id], references: [id])
+
+  series_id String
+  series    Series @relation(fields: [series_id], references: [id])
 
   sections      CourseSection[]
   lessons       Lesson[]
@@ -551,6 +569,7 @@ model Lesson {
   duration_sec Int?
   position     Int        @default(0)
   metadata     Json?
+  is_locked    Boolean    @default(false)
 
   course  Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
   section CourseSection? @relation(fields: [section_id], references: [id], onDelete: SetNull)
@@ -571,12 +590,13 @@ model MediaAsset {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  course_id String?
-  lesson_id String?
-  url       String
-  kind      String  @default("video") // "image","video","pdf","slides"
-  alt       String?
-  position  Int     @default(0)
+  course_id    String?
+  lesson_id    String?
+  url          String
+  kind         String  @default("video") // "image","video","pdf","slides"
+  alt          String?
+  position     Int     @default(0)
+  duration_sec Int?
 
   course Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
   lesson Lesson? @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
