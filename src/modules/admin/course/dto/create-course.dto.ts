@@ -10,6 +10,9 @@ export class CreateCourseDto {
     @IsString() @IsNotEmpty() @MaxLength(120)
     title!: string;
 
+    @IsString() @MaxLength(140)
+    series_id?: string;
+
     @IsOptional() @IsString() @MaxLength(140)
     slug?: string;
 
