@@ -242,7 +242,7 @@ export class SeriesService {
               summary: true,
               description: true,
               visibility: true,
-              estimated_min: true,
+              duration: true,
               price: true,
               created_at: true,
             },

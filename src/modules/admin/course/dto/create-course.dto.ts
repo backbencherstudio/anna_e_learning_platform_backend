@@ -2,15 +2,14 @@ import { Transform, Type } from 'class-transformer';
 import {
     IsDateString, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, Min, ValidateNested, IsArray,
 } from 'class-validator';
-import { LessonType, CourseVisibility } from '@prisma/client';
-import { CreateCourseSectionDto } from './create-course-section.dto';
-import { CreateLessonDto } from './create-lesson.dto';
+import { CourseVisibility } from '@prisma/client';
+import { CreateModuleDto } from './create-module.dto';
 
 export class CreateCourseDto {
     @IsString() @IsNotEmpty() @MaxLength(120)
     title!: string;
 
-    @IsString() @MaxLength(140)
+    @IsString() @MaxLength(140) @IsOptional()
     series_id?: string;
 
     @IsOptional() @IsString() @MaxLength(140)
@@ -25,8 +24,8 @@ export class CreateCourseDto {
     @IsOptional() @IsEnum(CourseVisibility)
     visibility?: CourseVisibility;
 
-    @IsOptional() @Type(() => Number) @IsInt() @Min(0)
-    estimated_min?: number;
+    @IsOptional() @IsString()
+    duration?: string;
 
     @IsOptional() @IsDateString()
     start_date?: string;
@@ -35,23 +34,23 @@ export class CreateCourseDto {
     end_date?: string;
 
     @IsOptional()
-    thumbnail?: string;
-
-    @IsOptional()
-    media?: string[];
+    thumbnail?: Express.Multer.File;
 
     @IsOptional()
     @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
     price?: number;
 
     @IsOptional() @IsString()
-    language_id?: string;
+    code_type?: string;
 
-    @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => CreateCourseSectionDto)
-    sections?: CreateCourseSectionDto[];
+    @IsOptional() @IsString()
+    course_type?: string;
 
-    @IsArray()
+    @IsOptional() @IsString()
+    note?: string;
+
     @IsOptional()
+    @IsArray()
     @Transform(({ value }) => {
         if (typeof value === 'string') {
             // Parse the answers if it's a stringified array
@@ -63,5 +62,5 @@ export class CreateCourseDto {
         }
         return value;  // Return the original value if it's already an array
     })
-    lessons?: CreateLessonDto[];
+    modules?: CreateModuleDto[];
 }

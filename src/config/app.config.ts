@@ -78,10 +78,9 @@ export default () => ({
     attachment: '/attachment/',
     // course
     series_thumbnail: '/series/thumbnail/',
-    course_media: '/course/media/',
     course_thumbnail: '/course/thumbnail/',
-    lesson_media: '/lesson/media/',
-    section_media: '/section/media/',
+    lesson_file: '/lesson/file/',
+    module_file: '/module/file/',
   },
 
   defaultUser: {

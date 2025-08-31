@@ -2,11 +2,9 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
-import { CreateCourseSectionDto } from './dto/create-course-section.dto';
-import { CreateLessonDto } from './dto/create-lesson.dto';
 import { CourseResponse } from './interfaces/course-response.interface';
 import { StringHelper } from '../../../common/helper/string.helper';
-import { Course, CourseSection, Lesson } from '@prisma/client';
+import { Course } from '@prisma/client';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
 
@@ -17,16 +15,19 @@ export class CourseService {
   constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Create a new course with optional sections and lessons
+   * Create a new course with optional modules and lesson files
    */
   async create(
     createCourseDto: CreateCourseDto,
-    thumbnail: Express.Multer.File,
-    courseMedia: Express.Multer.File[],
-    lessonMedia: Express.Multer.File[]
+    thumbnail?: Express.Multer.File,
+    moduleFiles?: {
+      moduleIndex: number;
+      introVideo?: Express.Multer.File;
+      endVideo?: Express.Multer.File;
+      lessonFiles?: Express.Multer.File[];
+    }[]
   ): Promise<CourseResponse<Course>> {
 
-    console.log(createCourseDto, thumbnail, courseMedia, lessonMedia);
     try {
       this.logger.log('Creating new course');
 
@@ -43,14 +44,14 @@ export class CourseService {
       }
 
       // Handle thumbnail file upload
-
+      let thumbnailFileName: string | undefined;
       if (thumbnail) {
-        const thumbnailFileName = StringHelper.generateRandomFileName(thumbnail.originalname);
+        thumbnailFileName = StringHelper.generateRandomFileName(thumbnail.originalname);
         await SojebStorage.put(appConfig().storageUrl.course_thumbnail + thumbnailFileName, thumbnail.buffer);
-        createCourseDto.thumbnail = thumbnailFileName;
+        this.logger.log(`Uploaded thumbnail: ${thumbnailFileName}`);
       }
 
-      // Create course with sections and lessons in a transaction
+      // Create course with modules and lesson files in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
         // Create the course
         const course = await prisma.course.create({
@@ -60,106 +61,74 @@ export class CourseService {
             summary: createCourseDto.summary,
             description: createCourseDto.description,
             visibility: createCourseDto.visibility || 'DRAFT',
-            estimated_min: createCourseDto.estimated_min,
+            duration: createCourseDto.duration,
             start_date: createCourseDto.start_date ? new Date(createCourseDto.start_date) : undefined,
             end_date: createCourseDto.end_date ? new Date(createCourseDto.end_date) : undefined,
-            thumbnail: createCourseDto.thumbnail,
+            thumbnail: thumbnailFileName,
             price: createCourseDto.price,
-            language_id: createCourseDto.language_id,
+            code_type: createCourseDto.code_type,
+            course_type: createCourseDto.course_type,
+            note: createCourseDto.note,
             series_id: createCourseDto.series_id,
           },
         });
 
-        // // Handle course media files
-        if (courseMedia && courseMedia.length > 0) {
-          this.logger.log(`Processing ${courseMedia.length} course media files`);
-          for (const mediaFile of courseMedia) {
-            this.logger.log(`Processing media file: ${mediaFile.originalname}, size: ${mediaFile.size}, mimetype: ${mediaFile.mimetype}`);
-            const mediaFileName = StringHelper.generateRandomFileName(mediaFile.originalname);
-            await SojebStorage.put(appConfig().storageUrl.course_media + mediaFileName, mediaFile.buffer);
+        // Create modules if provided
+        if (createCourseDto.modules && createCourseDto.modules.length > 0) {
+          for (let i = 0; i < createCourseDto.modules.length; i++) {
+            const moduleDto = createCourseDto.modules[i];
 
-            const mediaAsset = await prisma.mediaAsset.create({
-              data: {
-                course_id: course.id,
-                url: mediaFileName,
-                kind: this.getFileKind(mediaFile.mimetype),
-                alt: mediaFile.originalname,
-                position: 0,
-              },
-            });
-            this.logger.log(`Created media asset with ID: ${mediaAsset.id}, URL: ${mediaFileName}`);
-          }
-        } else {
-          this.logger.log('No course media files to process');
-        }
+            // Find module files for this specific module
+            const moduleFileData = moduleFiles?.find(mf => mf.moduleIndex === i);
 
-        // Create sections if provided
-        if (createCourseDto.sections && createCourseDto.sections.length > 0) {
-          for (const sectionDto of createCourseDto.sections) {
-            const section = await prisma.courseSection.create({
-              data: {
-                course_id: course.id,
-                title: sectionDto.title,
-                position: sectionDto.position || 0,
-              },
-            });
-          }
-        }
-
-        // Create lessons if provided
-        if (createCourseDto.lessons && createCourseDto.lessons.length > 0) {
-          for (const lessonDto of createCourseDto.lessons) {
-            const lessonSlug = lessonDto.slug || StringHelper.slugify(lessonDto.title);
-
-            // Check if lesson slug exists in this course
-            const existingLesson = await prisma.lesson.findFirst({
-              where: {
-                course_id: course.id,
-                slug: lessonSlug,
-              },
-            });
-
-            if (existingLesson) {
-              throw new BadRequestException(`Lesson with slug '${lessonSlug}' already exists in this course`);
+            // Handle intro video file upload for this module
+            let introVideoUrl: string | undefined;
+            if (moduleFileData?.introVideo) {
+              introVideoUrl = StringHelper.generateRandomFileName(moduleFileData.introVideo.originalname);
+              await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, moduleFileData.introVideo.buffer);
+              this.logger.log(`Uploaded intro video for module ${i}: ${introVideoUrl}`);
             }
 
-            const lesson = await prisma.lesson.create({
+            // Handle end video file upload for this module
+            let endVideoUrl: string | undefined;
+            if (moduleFileData?.endVideo) {
+              endVideoUrl = StringHelper.generateRandomFileName(moduleFileData.endVideo.originalname);
+              await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, moduleFileData.endVideo.buffer);
+              this.logger.log(`Uploaded end video for module ${i}: ${endVideoUrl}`);
+            }
+
+            const module = await prisma.module.create({
               data: {
                 course_id: course.id,
-                section_id: lessonDto.section_id,
-                title: lessonDto.title,
-                slug: lessonSlug,
-                type: lessonDto.type || 'VIDEO',
-                content: lessonDto.description ? { description: lessonDto.description } : undefined,
-                duration_sec: lessonDto.duration_sec,
-                position: lessonDto.position || 0,
-                metadata: lessonDto.metadata,
+                title: moduleDto.title,
+                position: moduleDto.position || i,
+                intro_video_url: introVideoUrl,
+                end_video_url: endVideoUrl,
               },
             });
 
-            // Handle lesson media files
-            if (lessonMedia && lessonMedia.length > 0) {
-              this.logger.log(`Processing ${lessonMedia.length} lesson media files for lesson: ${lesson.title}`);
-              for (const mediaFile of lessonMedia) {
-                this.logger.log(`Processing lesson media file: ${mediaFile.originalname}, size: ${mediaFile.size}, mimetype: ${mediaFile.mimetype}`);
-                const mediaFileName = StringHelper.generateRandomFileName(mediaFile.originalname);
-                await SojebStorage.put(appConfig().storageUrl.lesson_media + mediaFileName, mediaFile.buffer);
+            // Handle lesson files for this specific module
+            if (moduleFileData?.lessonFiles && moduleFileData.lessonFiles.length > 0) {
+              this.logger.log(`Processing ${moduleFileData.lessonFiles.length} lesson files for module ${i}`);
+              for (let j = 0; j < moduleFileData.lessonFiles.length; j++) {
+                const lessonFile = moduleFileData.lessonFiles[j];
+                const fileName = StringHelper.generateRandomFileName(lessonFile.originalname);
+                await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
 
-                const lessonMediaAsset = await prisma.mediaAsset.create({
+                await prisma.lessonFile.create({
                   data: {
-                    lesson_id: lesson.id,
-                    url: mediaFileName,
-                    kind: this.getFileKind(mediaFile.mimetype),
-                    alt: mediaFile.originalname,
-                    position: 0,
+                    module_id: module.id,
+                    url: fileName,
+                    kind: this.getFileKind(lessonFile.mimetype),
+                    alt: lessonFile.originalname,
+                    position: j,
                   },
                 });
-                this.logger.log(`Created lesson media asset with ID: ${lessonMediaAsset.id}, URL: ${mediaFileName}`);
               }
-            } else {
-              this.logger.log(`No lesson media files to process for lesson: ${lesson.title}`);
+              this.logger.log(`Created ${moduleFileData.lessonFiles.length} lesson files for module ${i}`);
             }
           }
+          this.logger.log(`Created ${createCourseDto.modules.length} modules for course`);
         }
 
         return course;
@@ -169,9 +138,9 @@ export class CourseService {
       const courseWithRelations = await this.prisma.course.findUnique({
         where: { id: result.id },
         include: {
-          media: true,
-          sections: true,
-          lessons: true,
+          modules: {
+            orderBy: { position: 'asc' },
+          },
         }
       });
 
@@ -225,78 +194,50 @@ export class CourseService {
             summary: true,
             description: true,
             visibility: true,
-            estimated_min: true,
+            duration: true,
             start_date: true,
             end_date: true,
             thumbnail: true,
-            metadata: true,
             price: true,
+            code_type: true,
+            course_type: true,
+            note: true,
             created_at: true,
             updated_at: true,
-            language: {
-              select: {
-                id: true,
-                name: true,
-                code: true,
-              },
-            },
-            media: {
-              select: {
-                id: true,
-                url: true,
-                kind: true,
-                alt: true,
-                position: true,
-                created_at: true,
-              },
-              orderBy: { position: 'asc' },
-            },
             series: {
               select: {
                 id: true,
                 title: true,
               },
             },
-            // sections: {
-            //   select: {
-            //     id: true,
-            //     title: true,
-            //     position: true,
-            //     created_at: true,
-            //     updated_at: true,
-            //   },
-            //   orderBy: { position: 'asc' },
-            // },
-            // lessons: {
-            //   select: {
-            //     id: true,
-            //     title: true,
-            //     slug: true,
-            //     type: true,
-            //     duration_sec: true,
-            //     position: true,
-            //     created_at: true,
-            //     updated_at: true,
-            //     section: {
-            //       select: {
-            //         id: true,
-            //         title: true,
-            //         position: true,
-            //       },
-            //     },
-            //     media: {
-            //       select: {
-            //         id: true,
-            //         url: true,
-            //         kind: true,
-            //         alt: true,
-            //         position: true,
-            //       },
-            //       orderBy: { position: 'asc' },
-            //     },
-            //   },
-            //   orderBy: { position: 'asc' },
-            // },
+            modules: {
+              select: {
+                id: true,
+                title: true,
+                position: true,
+                created_at: true,
+                updated_at: true,
+                intro_video_url: true,
+                end_video_url: true,
+                lesson_files: {
+                  select: {
+                    id: true,
+                    url: true,
+                    kind: true,
+                    alt: true,
+                  },
+                  orderBy: { position: 'asc' },
+                },
+              },
+              orderBy: { position: 'asc' },
+            },
+            _count: {
+              select: {
+                modules: true,
+                quizzes: true,
+                assignments: true,
+              },
+            },
           },
           orderBy: { created_at: 'desc' },
         }),
@@ -313,24 +254,23 @@ export class CourseService {
         if (course.thumbnail) {
           course['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.course_thumbnail + course.thumbnail);
         }
-        if (course.media && course.media.length > 0) {
-          for (const media of course.media) {
-            if (media.url) {
-              media['file_url'] = SojebStorage.url(appConfig().storageUrl.course_media + media.url);
+        if (course.modules && course.modules.length > 0) {
+          for (const module of course.modules) {
+            if (module.lesson_files && module.lesson_files.length > 0) {
+              for (const lessonFile of module.lesson_files) {
+                if (lessonFile.url) {
+                  lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                }
+              }
+            }
+            if (module.intro_video_url) {
+              module['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + module.intro_video_url);
+            }
+            if (module.end_video_url) {
+              module['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + module.end_video_url);
             }
           }
         }
-        // if (course.lessons && course.lessons.length > 0) {
-        //   for (const lesson of course.lessons) {
-        //     if (lesson.media && lesson.media.length > 0) {
-        //       for (const media of lesson.media) {
-        //         if (media.url) {
-        //           media['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_media + media.url);
-        //         }
-        //       }
-        //     }
-        //   }
-        // }
       }
 
       return {
@@ -369,74 +309,53 @@ export class CourseService {
       const course = await this.prisma.course.findUnique({
         where: { id },
         include: {
-          language: true,
-          media: {
-            orderBy: { position: 'asc' },
-          },
-          sections: {
-            orderBy: { position: 'asc' },
+          series: {
             select: {
               id: true,
               title: true,
-              position: true,
-              created_at: true,
-              updated_at: true,
-              lessons: {
+              description: true,
+            },
+          },
+          modules: {
+            orderBy: { position: 'asc' },
+            include: {
+              lesson_files: {
                 orderBy: { position: 'asc' },
+              },
+              quizzes: {
                 select: {
                   id: true,
                   title: true,
-                  slug: true,
-                  type: true,
-                  duration_sec: true,
-                  position: true,
-                  created_at: true,
-                  updated_at: true,
-                  media: {
-                    select: {
-                      id: true,
-                      url: true,
-                      kind: true,
-                      alt: true,
-                      position: true,
-                    },
-                    orderBy: { position: 'asc' },
-                  },
+                  total_marks: true,
+                },
+              },
+              assignments: {
+                select: {
+                  id: true,
+                  title: true,
+                  total_marks: true,
                 },
               },
             },
           },
-          lessons: {
-            orderBy: { position: 'asc' },
+          quizzes: {
             select: {
               id: true,
               title: true,
-              slug: true,
-              type: true,
-              duration_sec: true,
-              position: true,
-              created_at: true,
-              updated_at: true,
-              media: {
-                select: {
-                  id: true,
-                  url: true,
-                  kind: true,
-                  alt: true,
-                  position: true,
-                },
-                orderBy: { position: 'asc' },
-              },
+              total_marks: true,
             },
           },
-          series: true,
-          quizzes: true,
-          assignments: true,
+          assignments: {
+            select: {
+              id: true,
+              title: true,
+              total_marks: true,
+            },
+          },
           _count: {
             select: {
               enrollments: true,
-              lessons: true,
-              sections: true,
+              modules: true,
             },
           },
         },
@@ -450,24 +369,24 @@ export class CourseService {
       if (course.thumbnail) {
         course['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.course_thumbnail + course.thumbnail);
       }
-      if (course.media && course.media.length > 0) {
-        for (const media of course.media) {
-          if (media.url) {
-            media['file_url'] = SojebStorage.url(appConfig().storageUrl.course_media + media.url);
-          }
-        }
-      }
-      if (course.lessons && course.lessons.length > 0) {
-        for (const lesson of course.lessons) {
-          if (lesson.media && lesson.media.length > 0) {
-            for (const media of lesson.media) {
-              if (media.url) {
-                media['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_media + media.url);
+      if (course.modules && course.modules.length > 0) {
+        for (const module of course.modules) {
+          if (module.lesson_files && module.lesson_files.length > 0) {
+            for (const lessonFile of module.lesson_files) {
+              if (lessonFile.url) {
+                lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
               }
             }
           }
+          if (module.intro_video_url) {
+            module['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + module.intro_video_url);
+          }
+          if (module.end_video_url) {
+            module['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + module.end_video_url);
+          }
         }
       }
+
 
       return {
         success: true,
@@ -492,7 +411,7 @@ export class CourseService {
   /**
    * Update a course by ID
    */
-  async update(id: string, updateCourseDto: UpdateCourseDto, thumbnail: Express.Multer.File, courseMedia: Express.Multer.File[], lessonMedia: Express.Multer.File[]): Promise<CourseResponse<any>> {
+  async update(id: string, updateCourseDto: UpdateCourseDto, thumbnail?: Express.Multer.File): Promise<CourseResponse<any>> {
     try {
       this.logger.log(`Updating course with ID: ${id}`);
 
@@ -541,7 +460,7 @@ export class CourseService {
         }
       }
 
-      // Update course and handle media files in a transaction
+      // Update course in a transaction
       const updatedCourse = await this.prisma.$transaction(async (prisma) => {
         // Prepare update data
         const updateData: any = { ...updateCourseDto };
@@ -550,51 +469,10 @@ export class CourseService {
         if (updateCourseDto.start_date) updateData.start_date = new Date(updateCourseDto.start_date);
         if (updateCourseDto.end_date) updateData.end_date = new Date(updateCourseDto.end_date);
 
-        // Remove media from updateData as we'll handle it separately
-        delete updateData.media;
-        delete updateData.thumbnail; // Remove the file object, keep only filename
-
         const course = await prisma.course.update({
           where: { id },
           data: updateData,
         });
-
-        // Handle course media files - delete old ones and create new ones
-        if (courseMedia && courseMedia.length > 0) {
-          // Delete existing course media files
-          const existingMedia = await prisma.mediaAsset.findMany({
-            where: { course_id: id, lesson_id: null },
-          });
-
-          for (const media of existingMedia) {
-            try {
-              await SojebStorage.delete(appConfig().storageUrl.course_media + media.url);
-            } catch (error) {
-              this.logger.warn(`Failed to delete old media file: ${error.message}`);
-            }
-          }
-
-          // Delete old media records
-          await prisma.mediaAsset.deleteMany({
-            where: { course_id: id, lesson_id: null },
-          });
-
-          // Create new media files
-          for (const mediaFile of courseMedia) {
-            const mediaFileName = StringHelper.generateRandomFileName(mediaFile.originalname);
-            await SojebStorage.put(appConfig().storageUrl.course_media + mediaFileName, mediaFile.buffer);
-
-            await prisma.mediaAsset.create({
-              data: {
-                course_id: course.id,
-                url: mediaFileName,
-                kind: this.getFileKind(mediaFile.mimetype),
-                alt: mediaFile.originalname,
-                position: 0,
-              },
-            });
-          }
-        }
 
         return course;
       });
@@ -602,7 +480,24 @@ export class CourseService {
       // Fetch the complete updated course with relations
       const courseWithRelations = await this.prisma.course.findUnique({
         where: { id },
+        include: {
+          modules: {
+            orderBy: { position: 'asc' },
+          },
+          series: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+            },
+          },
+        }
       });
+
+      // Add thumbnail URL
+      if (courseWithRelations?.thumbnail) {
+        courseWithRelations.thumbnail = appConfig().storageUrl.course_thumbnail + courseWithRelations.thumbnail;
+      }
 
       this.logger.log(`Course updated successfully with ID: ${id}`);
 
@@ -638,16 +533,12 @@ export class CourseService {
         select: {
           id: true,
           thumbnail: true,
-          media: {
+          modules: {
             select: {
               id: true,
-              url: true,
-            },
-          },
-          lessons: {
-            select: {
-              id: true,
-              media: {
+              intro_video_url: true,
+              end_video_url: true,
+              lesson_files: {
                 select: {
                   id: true,
                   url: true,
@@ -669,31 +560,36 @@ export class CourseService {
           await SojebStorage.delete(appConfig().storageUrl.course_thumbnail + existingCourse.thumbnail);
         }
 
-        // Delete course media files
-        if (existingCourse.media && existingCourse.media.length > 0) {
-          for (const media of existingCourse.media) {
-            try {
-              await SojebStorage.delete(appConfig().storageUrl.course_media + media.url);
-            } catch (error) {
-              this.logger.warn(`Failed to delete course media file: ${error.message}`);
+        // Delete module video files
+        if (existingCourse.modules && existingCourse.modules.length > 0) {
+          for (const module of existingCourse.modules) {
+            if (module.intro_video_url) {
+              try {
+                await SojebStorage.delete(appConfig().storageUrl.module_file + module.intro_video_url);
+              } catch (error) {
+                this.logger.warn(`Failed to delete module intro video: ${error.message}`);
+              }
             }
-          }
-        }
-
-        // Delete lesson media files
-        if (existingCourse.lessons && existingCourse.lessons.length > 0) {
-          for (const lesson of existingCourse.lessons) {
-            if (lesson.media && lesson.media.length > 0) {
-              for (const media of lesson.media) {
+            if (module.end_video_url) {
+              try {
+                await SojebStorage.delete(appConfig().storageUrl.module_file + module.end_video_url);
+              } catch (error) {
+                this.logger.warn(`Failed to delete module end video: ${error.message}`);
+              }
+            }
+            // Delete lesson files
+            if (module.lesson_files && module.lesson_files.length > 0) {
+              for (const lessonFile of module.lesson_files) {
                 try {
-                  await SojebStorage.delete(appConfig().storageUrl.lesson_media + media.url);
+                  await SojebStorage.delete(appConfig().storageUrl.lesson_file + lessonFile.url);
                 } catch (error) {
-                  this.logger.warn(`Failed to delete lesson media file: ${error.message}`);
+                  this.logger.warn(`Failed to delete lesson file: ${error.message}`);
                 }
               }
             }
           }
         }
+
       } catch (error) {
         this.logger.warn(`Failed to delete some files: ${error.message}`);
       }
@@ -737,3 +633,4 @@ export class CourseService {
     return 'other';
   }
 }
+
