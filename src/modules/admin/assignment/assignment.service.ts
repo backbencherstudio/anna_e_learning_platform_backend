@@ -46,7 +46,7 @@ export class AssignmentService {
             is_published: createAssignmentDto.is_published || false,
             published_at: createAssignmentDto.published_at ? new Date(createAssignmentDto.published_at) : undefined,
             course_id: createAssignmentDto.course_id,
-            lesson_id: createAssignmentDto.lesson_id,
+            module_id: createAssignmentDto.module_id,
           },
         });
 
@@ -139,13 +139,6 @@ export class AssignmentService {
                 slug: true,
               },
             },
-            lesson: {
-              select: {
-                id: true,
-                title: true,
-                slug: true,
-              },
-            },
             questions: {
               select: {
                 id: true,
@@ -210,13 +203,6 @@ export class AssignmentService {
         where: { id },
         include: {
           course: {
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-            },
-          },
-          lesson: {
             select: {
               id: true,
               title: true,

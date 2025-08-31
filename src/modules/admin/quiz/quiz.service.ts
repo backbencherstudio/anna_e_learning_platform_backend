@@ -55,7 +55,7 @@ export class QuizService {
             published_at: createQuizDto.published_at ? new Date(createQuizDto.published_at) : undefined,
             metadata: createQuizDto.metadata,
             course_id: createQuizDto.course_id,
-            lesson_id: createQuizDto.lesson_id,
+            module_id: createQuizDto.module_id,
           },
         });
 
@@ -157,13 +157,6 @@ export class QuizService {
                 slug: true,
               },
             },
-            lesson: {
-              select: {
-                id: true,
-                title: true,
-                slug: true,
-              },
-            },
             questions: {
               select: {
                 id: true,
@@ -238,11 +231,11 @@ export class QuizService {
               slug: true,
             },
           },
-          lesson: {
+          module: {
             select: {
               id: true,
               title: true,
-              slug: true,
+              position: true,
             },
           },
           questions: {

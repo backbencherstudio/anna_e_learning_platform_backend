@@ -84,7 +84,7 @@ export class CreateQuizDto {
 
     @IsOptional()
     @IsString()
-    lesson_id?: string;
+    module_id?: string;
 
     @IsArray()
     @ValidateNested({ each: true })

@@ -60,7 +60,7 @@ export class CreateAssignmentDto {
 
     @IsOptional()
     @IsString()
-    lesson_id?: string;
+    module_id?: string;
 
     @IsArray()
     @ValidateNested({ each: true })
