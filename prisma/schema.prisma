@@ -10,18 +10,8 @@ datasource db {
 
 enum CourseVisibility {
   DRAFT
-  PRIVATE
   PUBLISHED
   ARCHIVED
-}
-
-enum LessonType {
-  VIDEO
-  ARTICLE
-  QUIZ
-  ASSIGNMENT
-  LIVE
-  OTHER
 }
 
 enum QuizAttemptStatus {
@@ -469,21 +459,6 @@ model UserSetting {
 //   @@map("posts")
 // }
 
-// ---------- Languages ----------
-model Language {
-  id         String    @id @default(cuid())
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime?
-
-  name String
-  code String @unique
-
-  courses Course[]
-
-  @@map("languages")
-}
-
 // ---------- Content ----------
 
 model Series {
@@ -506,27 +481,24 @@ model Course {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title         String
-  slug          String           @unique
-  summary       String?
-  description   String?
-  visibility    CourseVisibility @default(DRAFT)
-  estimated_min Int?
-  start_date    DateTime?
-  end_date      DateTime?
-  thumbnail     String?
-  metadata      Json?
-  price         Decimal?
+  title       String
+  slug        String           @unique
+  summary     String?
+  description String?
+  visibility  CourseVisibility @default(DRAFT)
+  duration    String?
+  start_date  DateTime?
+  end_date    DateTime?
+  thumbnail   String?
+  price       Decimal?
+  code_type   String?          @default("paid student")
+  course_type String?          @default("regular")
+  note        String?
 
-  language_id String?
-  language    Language? @relation(fields: [language_id], references: [id])
+  series_id String?
+  series    Series? @relation(fields: [series_id], references: [id])
 
-  series_id String
-  series    Series @relation(fields: [series_id], references: [id])
-
-  sections      CourseSection[]
-  lessons       Lesson[]
-  media         MediaAsset[]
+  modules       Module[]
   quizzes       Quiz[]
   assignments   Assignment[]
   enrollments   Enrollment[]
@@ -536,7 +508,7 @@ model Course {
   @@map("courses")
 }
 
-model CourseSection {
+model Module {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
@@ -545,65 +517,35 @@ model CourseSection {
   course_id String
   course    Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
 
-  title    String
-  position Int    @default(0)
+  title           String
+  position        Int     @default(0)
+  intro_video_url String?
+  end_video_url   String?
 
-  lessons Lesson[]
+  lesson_files LessonFile[]
+  quizzes      Quiz[]
+  assignments  Assignment[]
 
   @@index([course_id, position])
-  @@map("course_sections")
+  @@map("modules")
 }
 
-model Lesson {
+model LessonFile {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  course_id    String
-  section_id   String?
-  title        String
-  slug         String
-  type         LessonType @default(VIDEO)
-  content      Json?
-  duration_sec Int?
-  position     Int        @default(0)
-  metadata     Json?
-  is_locked    Boolean    @default(false)
+  url      String
+  kind     String  @default("video") // "image","video","pdf","slides"
+  alt      String?
+  position Int     @default(0)
 
-  course  Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  section CourseSection? @relation(fields: [section_id], references: [id], onDelete: SetNull)
+  module_id String?
+  module    Module? @relation(fields: [module_id], references: [id])
 
-  media         MediaAsset[]
-  quizzes       Quiz[]
-  assignments   Assignment[]
-  user_progress UserProgress[]
-
-  @@unique([course_id, slug])
-  @@index([course_id, position])
-  @@map("lessons")
-}
-
-model MediaAsset {
-  id         String    @id @default(cuid())
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime?
-
-  course_id    String?
-  lesson_id    String?
-  url          String
-  kind         String  @default("video") // "image","video","pdf","slides"
-  alt          String?
-  position     Int     @default(0)
-  duration_sec Int?
-
-  course Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  lesson Lesson? @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
-
-  @@index([course_id])
-  @@index([lesson_id])
-  @@map("media_assets")
+  @@index([module_id])
+  @@map("lesson_files")
 }
 
 // ---------- Assessment: Quiz ----------
@@ -614,7 +556,7 @@ model Quiz {
   deleted_at DateTime?
 
   course_id    String
-  lesson_id    String?
+  module_id    String?
   title        String
   instructions String?
   total_marks  Int     @default(0)
@@ -625,7 +567,7 @@ model Quiz {
   metadata     Json?
 
   course    Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  lesson    Lesson?        @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+  module    Module?        @relation(fields: [module_id], references: [id], onDelete: SetNull)
   questions QuizQuestion[]
 
   @@map("quizzes")
@@ -673,7 +615,7 @@ model Assignment {
   deleted_at DateTime?
 
   course_id    String
-  lesson_id    String?
+  module_id    String?
   title        String?
   description  String?
   total_marks  Int       @default(0)
@@ -682,7 +624,7 @@ model Assignment {
   published_at DateTime?
 
   course      Course                 @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  lesson      Lesson?                @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+  module      Module?                @relation(fields: [module_id], references: [id], onDelete: SetNull)
   questions   AssignmentQuestion[]
   submissions AssignmentSubmission[]
 
@@ -805,7 +747,6 @@ model UserProgress {
 
   user_id   String
   course_id String
-  lesson_id String?
 
   // Progress
   is_completed  Boolean   @default(false)
@@ -814,11 +755,10 @@ model UserProgress {
   last_position Int? // Video/audio position
 
   // Relations
-  user   User    @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  course Course  @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  lesson Lesson? @relation(fields: [lesson_id], references: [id], onDelete: SetNull)
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
 
-  @@unique([user_id, course_id, lesson_id])
+  @@unique([user_id, course_id])
   @@map("user_progress")
 }
 
