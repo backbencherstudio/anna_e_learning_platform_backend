@@ -8,7 +8,7 @@ import { NotificationModule } from './notification/notification.module';
 import { CourseModule } from './course/course.module';
 import { QuizModule } from './quiz/quiz.module';
 import { AssignmentModule } from './assignment/assignment.module';
-import { SeriesModule } from './series/series.module';
+import { LanguageModule } from './language/language.module';
 
 @Module({
   imports: [
@@ -21,7 +21,7 @@ import { SeriesModule } from './series/series.module';
     CourseModule,
     QuizModule,
     AssignmentModule,
-    SeriesModule,
+    LanguageModule,
   ],
 })
-export class AdminModule {}
+export class AdminModule { }

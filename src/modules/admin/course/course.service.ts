@@ -70,6 +70,7 @@ export class CourseService {
             course_type: createCourseDto.course_type,
             note: createCourseDto.note,
             series_id: createCourseDto.series_id,
+            language_id: createCourseDto.language_id,
           },
         });
 
@@ -208,6 +209,13 @@ export class CourseService {
               select: {
                 id: true,
                 title: true,
+              },
+            },
+            language: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
               },
             },
             modules: {

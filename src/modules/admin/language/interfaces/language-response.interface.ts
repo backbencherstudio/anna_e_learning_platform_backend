@@ -1,4 +1,4 @@
-export interface SeriesResponse<T = any> {
+export interface LanguageResponse<T = any> {
     success: boolean;
     message: string;
     data?: T;

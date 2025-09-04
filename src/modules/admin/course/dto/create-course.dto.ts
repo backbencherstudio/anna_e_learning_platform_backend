@@ -49,6 +49,9 @@ export class CreateCourseDto {
     @IsOptional() @IsString()
     note?: string;
 
+    @IsOptional() @IsString()
+    language_id?: string;
+
     @IsOptional()
     @IsArray()
     @Transform(({ value }) => {

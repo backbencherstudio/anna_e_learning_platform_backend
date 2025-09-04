@@ -461,21 +461,7 @@ model UserSetting {
 
 // ---------- Content ----------
 
-model Series {
-  id         String    @id @default(cuid())
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime?
-
-  title         String
-  description   String?
-  thumbnail     String?
-  estimated_min Int?
-
-  courses Course[]
-}
-
-model Course {
+model CourseSeries {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
@@ -495,10 +481,7 @@ model Course {
   course_type String?          @default("regular")
   note        String?
 
-  series_id String?
-  series    Series? @relation(fields: [series_id], references: [id])
-
-  modules       Module[]
+  course_modules       CourseModule[]
   quizzes       Quiz[]
   assignments   Assignment[]
   enrollments   Enrollment[]
@@ -508,14 +491,14 @@ model Course {
   @@map("courses")
 }
 
-model Module {
+model CourseModule {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  course_id String
-  course    Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  course_series_id String
+  course    CourseSeries @relation(fields: [course_series_id], references: [id], onDelete: Cascade)
 
   title           String
   position        Int     @default(0)
@@ -526,7 +509,7 @@ model Module {
   quizzes      Quiz[]
   assignments  Assignment[]
 
-  @@index([course_id, position])
+  @@index([course_series_id, position])
   @@map("modules")
 }
 
@@ -541,10 +524,10 @@ model LessonFile {
   alt      String?
   position Int     @default(0)
 
-  module_id String?
-  module    Module? @relation(fields: [module_id], references: [id])
+  course_module_id String?
+  module    CourseModule? @relation(fields: [course_module_id], references: [id])
 
-  @@index([module_id])
+  @@index([course_module_id])
   @@map("lesson_files")
 }
 
@@ -555,8 +538,8 @@ model Quiz {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  course_id    String
-  module_id    String?
+  course_series_id    String
+  course_module_id    String?
   title        String
   instructions String?
   total_marks  Int     @default(0)
@@ -566,8 +549,8 @@ model Quiz {
   published_at DateTime?
   metadata     Json?
 
-  course    Course         @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  module    Module?        @relation(fields: [module_id], references: [id], onDelete: SetNull)
+  course    CourseSeries         @relation(fields: [course_series_id], references: [id], onDelete: Cascade)
+  module    CourseModule?        @relation(fields: [course_module_id], references: [id], onDelete: SetNull)
   questions QuizQuestion[]
 
   @@map("quizzes")
@@ -614,8 +597,8 @@ model Assignment {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  course_id    String
-  module_id    String?
+  course_series_id    String
+  course_module_id    String?
   title        String?
   description  String?
   total_marks  Int       @default(0)
@@ -623,8 +606,8 @@ model Assignment {
   is_published Boolean   @default(false)
   published_at DateTime?
 
-  course      Course                 @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  module      Module?                @relation(fields: [module_id], references: [id], onDelete: SetNull)
+  course      CourseSeries                 @relation(fields: [course_series_id], references: [id], onDelete: Cascade)
+  module      CourseModule?                @relation(fields: [course_module_id], references: [id], onDelete: SetNull)
   questions   AssignmentQuestion[]
   submissions AssignmentSubmission[]
 
@@ -720,7 +703,7 @@ model Enrollment {
   deleted_at DateTime?
 
   user_id   String
-  course_id String
+  course_series_id String
 
   status       EnrollmentStatus @default(ACTIVE)
   enrolled_at  DateTime         @default(now())
@@ -733,9 +716,9 @@ model Enrollment {
 
   // Relations
   user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  course CourseSeries @relation(fields: [course_series_id], references: [id], onDelete: Cascade)
 
-  @@unique([user_id, course_id])
+  @@unique([user_id, course_series_id])
   @@map("enrollments")
 }
 
@@ -746,7 +729,7 @@ model UserProgress {
   deleted_at DateTime?
 
   user_id   String
-  course_id String
+  course_series_id String
 
   // Progress
   is_completed  Boolean   @default(false)
@@ -756,9 +739,9 @@ model UserProgress {
 
   // Relations
   user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  course CourseSeries @relation(fields: [course_series_id], references: [id], onDelete: Cascade)
 
-  @@unique([user_id, course_id])
+  @@unique([user_id, course_series_id])
   @@map("user_progress")
 }
 
@@ -770,7 +753,7 @@ model Certificate {
   deleted_at DateTime?
 
   user_id   String
-  course_id String
+  course_series_id String
 
   // Certificate Details
   certificate_number String    @unique
@@ -779,8 +762,8 @@ model Certificate {
 
   // Relations
   user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  course CourseSeries @relation(fields: [course_series_id], references: [id], onDelete: Cascade)
 
-  @@unique([user_id, course_id])
+  @@unique([user_id, course_series_id])
   @@map("certificates")
 }
