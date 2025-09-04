@@ -3,10 +3,10 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateSeriesDto } from './dto/create-series.dto';
 import { UpdateSeriesDto } from './dto/update-series.dto';
 import { SeriesResponse } from './interfaces/series-response.interface';
-import { Series, Course } from '@prisma/client';
-import appConfig from 'src/config/app.config';
-import { StringHelper } from 'src/common/helper/string.helper';
+import { StringHelper } from '../../../common/helper/string.helper';
+import { Series } from '@prisma/client';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
+import appConfig from '../../../config/app.config';
 
 @Injectable()
 export class SeriesService {
@@ -15,28 +15,35 @@ export class SeriesService {
   constructor(private readonly prisma: PrismaService) { }
 
   /**
-   * Create a new series with optional course associations
+   * Create a new series with optional courses and lesson files
    */
-  async create(createSeriesDto: CreateSeriesDto, thumbnail?: Express.Multer.File): Promise<SeriesResponse<Series>> {
+  async create(
+    createSeriesDto: CreateSeriesDto,
+    thumbnail?: Express.Multer.File,
+    courseFiles?: {
+      courseIndex: number;
+      introVideo?: Express.Multer.File;
+      endVideo?: Express.Multer.File;
+      lessonFiles?: Express.Multer.File[];
+    }[]
+  ): Promise<SeriesResponse<Series>> {
+
     try {
       this.logger.log('Creating new series');
 
-      // Validate that course_ids exist if provided
-      if (createSeriesDto.course_ids && createSeriesDto.course_ids.length > 0) {
-        const existingCourses = await this.prisma.course.findMany({
-          where: {
-            id: { in: createSeriesDto.course_ids },
-            deleted_at: null,
-          },
-          select: { id: true },
-        });
+      // Generate slug from title if not provided
+      const slug = createSeriesDto.slug || StringHelper.slugify(createSeriesDto.title);
 
-        if (existingCourses.length !== createSeriesDto.course_ids.length) {
-          throw new BadRequestException('One or more course IDs are invalid');
-        }
+      // Check if slug already exists
+      const existingSeries = await this.prisma.series.findUnique({
+        where: { slug },
+      });
+
+      if (existingSeries) {
+        throw new BadRequestException(`Series with slug '${slug}' already exists`);
       }
 
-      // Handle thumbnail file upload if provided
+      // Handle thumbnail file upload
       let thumbnailFileName: string | undefined;
       if (thumbnail) {
         thumbnailFileName = StringHelper.generateRandomFileName(thumbnail.originalname);
@@ -44,27 +51,84 @@ export class SeriesService {
         this.logger.log(`Uploaded thumbnail: ${thumbnailFileName}`);
       }
 
-      // Create series with course associations in a transaction
+      // Create series with courses and lesson files in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
+        // Create the series
         const series = await prisma.series.create({
           data: {
             title: createSeriesDto.title,
+            slug,
+            summary: createSeriesDto.summary,
             description: createSeriesDto.description,
+            visibility: createSeriesDto.visibility || 'DRAFT',
+            duration: createSeriesDto.duration,
+            start_date: createSeriesDto.start_date ? new Date(createSeriesDto.start_date) : undefined,
+            end_date: createSeriesDto.end_date ? new Date(createSeriesDto.end_date) : undefined,
             thumbnail: thumbnailFileName,
+            price: createSeriesDto.price,
+            course_type: createSeriesDto.course_type,
+            note: createSeriesDto.note,
+            available_site: createSeriesDto.available_site,
+            language_id: createSeriesDto.language_id,
           },
         });
 
-        this.logger.log(`Created series with ID: ${series.id}`);
+        // Create courses if provided
+        if (createSeriesDto.courses && createSeriesDto.courses.length > 0) {
+          for (let i = 0; i < createSeriesDto.courses.length; i++) {
+            const courseDto = createSeriesDto.courses[i];
 
-        // Associate courses if provided
-        if (createSeriesDto.course_ids && createSeriesDto.course_ids.length > 0) {
-          for (const courseId of createSeriesDto.course_ids) {
-            await prisma.course.update({
-              where: { id: courseId },
-              data: { series_id: series.id },
+            // Find course files for this specific course
+            const courseFileData = courseFiles?.find(cf => cf.courseIndex === i);
+
+            // Handle intro video file upload for this course
+            let introVideoUrl: string | undefined;
+            if (courseFileData?.introVideo) {
+              introVideoUrl = StringHelper.generateRandomFileName(courseFileData.introVideo.originalname);
+              await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, courseFileData.introVideo.buffer);
+              this.logger.log(`Uploaded intro video for course ${i}: ${introVideoUrl}`);
+            }
+
+            // Handle end video file upload for this course
+            let endVideoUrl: string | undefined;
+            if (courseFileData?.endVideo) {
+              endVideoUrl = StringHelper.generateRandomFileName(courseFileData.endVideo.originalname);
+              await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, courseFileData.endVideo.buffer);
+              this.logger.log(`Uploaded end video for course ${i}: ${endVideoUrl}`);
+            }
+
+            const course = await prisma.course.create({
+              data: {
+                series_id: series.id,
+                title: courseDto.title,
+                position: courseDto.position || i,
+                intro_video_url: introVideoUrl,
+                end_video_url: endVideoUrl,
+              },
             });
+
+            // Handle lesson files for this specific course
+            if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
+              this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
+              for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
+                const lessonFile = courseFileData.lessonFiles[j];
+                const fileName = StringHelper.generateRandomFileName(lessonFile.originalname);
+                await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
+
+                await prisma.lessonFile.create({
+                  data: {
+                    course_id: course.id,
+                    url: fileName,
+                    kind: this.getFileKind(lessonFile.mimetype),
+                    alt: lessonFile.originalname,
+                    position: j,
+                  },
+                });
+              }
+              this.logger.log(`Created ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
+            }
           }
-          this.logger.log(`Associated ${createSeriesDto.course_ids.length} courses with series`);
+          this.logger.log(`Created ${createSeriesDto.courses.length} courses for series`);
         }
 
         return series;
@@ -75,32 +139,10 @@ export class SeriesService {
         where: { id: result.id },
         include: {
           courses: {
-            where: { deleted_at: null },
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              thumbnail: true,
-              summary: true,
-            },
-            orderBy: { created_at: 'asc' },
+            orderBy: { position: 'asc' },
           },
-        },
+        }
       });
-
-      // Add thumbnail URL for series
-      if (seriesWithRelations?.thumbnail) {
-        seriesWithRelations.thumbnail = appConfig().storageUrl.series_thumbnail + seriesWithRelations.thumbnail;
-      }
-
-      // Add thumbnail URL for courses
-      if (seriesWithRelations.courses && seriesWithRelations.courses.length > 0) {
-        seriesWithRelations.courses.forEach(course => {
-          if (course.thumbnail) {
-            course.thumbnail = appConfig().storageUrl.course_thumbnail + course.thumbnail;
-          }
-        });
-      }
 
       this.logger.log(`Series created successfully with ID: ${result.id}`);
 
@@ -123,7 +165,6 @@ export class SeriesService {
       };
     }
   }
-
   /**
    * Get all series with pagination and filtering
    */
@@ -136,6 +177,7 @@ export class SeriesService {
       const where = search ? {
         OR: [
           { title: { contains: search, mode: 'insensitive' as any } },
+          { summary: { contains: search, mode: 'insensitive' as any } },
           { description: { contains: search, mode: 'insensitive' as any } },
         ],
       } : {};
@@ -148,25 +190,53 @@ export class SeriesService {
           select: {
             id: true,
             title: true,
+            slug: true,
+            summary: true,
             description: true,
+            visibility: true,
+            duration: true,
+            start_date: true,
+            end_date: true,
             thumbnail: true,
-
+            price: true,
+            course_type: true,
+            note: true,
+            available_site: true,
             created_at: true,
             updated_at: true,
+            language: {
+              select: {
+                id: true,
+                name: true,
+                code: true,
+              },
+            },
             courses: {
-              where: { deleted_at: null },
               select: {
                 id: true,
                 title: true,
-                slug: true,
-                thumbnail: true,
-                summary: true,
+                position: true,
+                created_at: true,
+                updated_at: true,
+                intro_video_url: true,
+                end_video_url: true,
+                lesson_files: {
+                  select: {
+                    id: true,
+                    url: true,
+                    kind: true,
+                    alt: true,
+                  },
+                  orderBy: { position: 'asc' },
+                },
               },
-              orderBy: { created_at: 'asc' },
+              orderBy: { position: 'asc' },
             },
             _count: {
               select: {
                 courses: true,
+                quizzes: true,
+                assignments: true,
               },
             },
           },
@@ -175,26 +245,34 @@ export class SeriesService {
         this.prisma.series.count({ where }),
       ]);
 
-      // add thumbnail url for series
-      for (const s of series) {
-        if (s.thumbnail) {
-          s['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + s.thumbnail);
-        }
-
-        // add thumbnail url for courses
-        if (s.courses && s.courses.length > 0) {
-          s.courses.forEach(course => {
-            if (course.thumbnail) {
-              course['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.course_thumbnail + course.thumbnail);
-            }
-          });
-        }
-      }
-
       // Calculate pagination values
       const totalPages = Math.ceil(total / limit);
       const hasNextPage = page < totalPages;
       const hasPreviousPage = page > 1;
+
+      // Add file URLs to all series
+      for (const seriesItem of series) {
+        if (seriesItem.thumbnail) {
+          seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
+        }
+        if (seriesItem.courses && seriesItem.courses.length > 0) {
+          for (const course of seriesItem.courses) {
+            if (course.lesson_files && course.lesson_files.length > 0) {
+              for (const lessonFile of course.lesson_files) {
+                if (lessonFile.url) {
+                  lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                }
+              }
+            }
+            if (course.intro_video_url) {
+              course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+            }
+            if (course.end_video_url) {
+              course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+            }
+          }
+        }
+      }
 
       return {
         success: true,
@@ -233,20 +311,46 @@ export class SeriesService {
         where: { id },
         include: {
           courses: {
-            where: { deleted_at: null },
+            orderBy: { position: 'asc' },
+            include: {
+              lesson_files: {
+                orderBy: { position: 'asc' },
+              },
+              quizzes: {
+                select: {
+                  id: true,
+                  title: true,
+                  total_marks: true,
+                },
+              },
+              assignments: {
+                select: {
+                  id: true,
+                  title: true,
+                  total_marks: true,
+                },
+              },
+            },
+          },
+          quizzes: {
             select: {
               id: true,
               title: true,
-              slug: true,
-              thumbnail: true,
-              summary: true,
-              description: true,
-              visibility: true,
-              duration: true,
-              price: true,
-              created_at: true,
+              total_marks: true,
             },
-            orderBy: { created_at: 'asc' },
+          },
+          assignments: {
+            select: {
+              id: true,
+              title: true,
+              total_marks: true,
+            },
+          },
+          _count: {
+            select: {
+              enrollments: true,
+              courses: true,
+            },
           },
         },
       });
@@ -255,19 +359,28 @@ export class SeriesService {
         throw new NotFoundException(`Series with ID ${id} not found`);
       }
 
-      // Add thumbnail URL for series
+      // Add file URLs to the series
       if (series.thumbnail) {
         series['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + series.thumbnail);
       }
-
-      // Add thumbnail URL for courses
       if (series.courses && series.courses.length > 0) {
-        series.courses.forEach(course => {
-          if (course.thumbnail) {
-            course['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.course_thumbnail + course.thumbnail);
+        for (const course of series.courses) {
+          if (course.lesson_files && course.lesson_files.length > 0) {
+            for (const lessonFile of course.lesson_files) {
+              if (lessonFile.url) {
+                lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+              }
+            }
           }
-        });
+          if (course.intro_video_url) {
+            course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+          }
+          if (course.end_video_url) {
+            course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+          }
+        }
       }
+
 
       return {
         success: true,
@@ -299,90 +412,61 @@ export class SeriesService {
       // Check if series exists
       const existingSeries = await this.prisma.series.findUnique({
         where: { id },
-        select: { id: true },
+        select: { id: true, slug: true, thumbnail: true },
       });
 
       if (!existingSeries) {
         throw new NotFoundException(`Series with ID ${id} not found`);
       }
 
-      // Validate that course_ids exist if provided
-      if (updateSeriesDto.course_ids && updateSeriesDto.course_ids.length > 0) {
-        const existingCourses = await this.prisma.course.findMany({
-          where: {
-            id: { in: updateSeriesDto.course_ids },
-            deleted_at: null,
-          },
-          select: { id: true },
-        });
-
-        if (existingCourses.length !== updateSeriesDto.course_ids.length) {
-          throw new BadRequestException('One or more course IDs are invalid');
-        }
-      }
-
       // Handle thumbnail file upload if provided
       let thumbnailFileName: string | undefined;
       if (thumbnail) {
-        // Get existing series to delete old thumbnail
-        const existingSeries = await this.prisma.series.findUnique({
-          where: { id },
-          select: { thumbnail: true },
-        });
-
         // Delete old thumbnail if exists
-        if (existingSeries?.thumbnail) {
-          const { SojebStorage } = await import('../../../common/lib/Disk/SojebStorage');
+        if (existingSeries.thumbnail) {
           try {
             await SojebStorage.delete(appConfig().storageUrl.series_thumbnail + existingSeries.thumbnail);
-            this.logger.log(`Deleted old thumbnail: ${existingSeries.thumbnail}`);
           } catch (error) {
             this.logger.warn(`Failed to delete old thumbnail: ${error.message}`);
           }
         }
 
         // Upload new thumbnail
-        const { StringHelper } = await import('../../../common/helper/string.helper');
         thumbnailFileName = StringHelper.generateRandomFileName(thumbnail.originalname);
-        const { SojebStorage } = await import('../../../common/lib/Disk/SojebStorage');
         await SojebStorage.put(appConfig().storageUrl.series_thumbnail + thumbnailFileName, thumbnail.buffer);
-        this.logger.log(`Uploaded new thumbnail: ${thumbnailFileName}`);
       }
 
-      // Update series and handle course associations in a transaction
+      // Generate slug from title if title is being updated
+      let slug = updateSeriesDto.slug;
+      if (updateSeriesDto.title && !updateSeriesDto.slug) {
+        slug = StringHelper.slugify(updateSeriesDto.title);
+
+        // Check if new slug already exists (excluding current series)
+        const slugExists = await this.prisma.series.findFirst({
+          where: {
+            slug,
+            id: { not: id },
+          },
+        });
+
+        if (slugExists) {
+          throw new BadRequestException(`Series with slug '${slug}' already exists`);
+        }
+      }
+
+      // Update series in a transaction
       const updatedSeries = await this.prisma.$transaction(async (prisma) => {
         // Prepare update data
         const updateData: any = { ...updateSeriesDto };
-        if (thumbnailFileName) {
-          updateData.thumbnail = thumbnailFileName;
-        }
-
-        // Remove course_ids from updateData as we'll handle them separately
-        delete updateData.course_ids;
+        if (slug) updateData.slug = slug;
+        if (thumbnailFileName) updateData.thumbnail = thumbnailFileName;
+        if (updateSeriesDto.start_date) updateData.start_date = new Date(updateSeriesDto.start_date);
+        if (updateSeriesDto.end_date) updateData.end_date = new Date(updateSeriesDto.end_date);
 
         const series = await prisma.series.update({
           where: { id },
           data: updateData,
         });
-
-        // Handle course associations if provided
-        if (updateSeriesDto.course_ids !== undefined) {
-          // Remove all existing course associations
-          await prisma.course.updateMany({
-            where: { series_id: id },
-            data: { series_id: null },
-          });
-
-          // Add new course associations
-          if (updateSeriesDto.course_ids && updateSeriesDto.course_ids.length > 0) {
-            for (const courseId of updateSeriesDto.course_ids) {
-              await prisma.course.update({
-                where: { id: courseId },
-                data: { series_id: id },
-              });
-            }
-          }
-        }
 
         return series;
       });
@@ -392,31 +476,14 @@ export class SeriesService {
         where: { id },
         include: {
           courses: {
-            where: { deleted_at: null },
-            select: {
-              id: true,
-              title: true,
-              slug: true,
-              thumbnail: true,
-              summary: true,
-            },
-            orderBy: { created_at: 'asc' },
+            orderBy: { position: 'asc' },
           },
-        },
+        }
       });
 
-      // Add thumbnail URL for series
+      // Add thumbnail URL
       if (seriesWithRelations?.thumbnail) {
         seriesWithRelations.thumbnail = appConfig().storageUrl.series_thumbnail + seriesWithRelations.thumbnail;
-      }
-
-      // Add thumbnail URL for courses
-      if (seriesWithRelations.courses && seriesWithRelations.courses.length > 0) {
-        seriesWithRelations.courses.forEach(course => {
-          if (course.thumbnail) {
-            course.thumbnail = appConfig().storageUrl.course_thumbnail + course.thumbnail;
-          }
-        });
       }
 
       this.logger.log(`Series updated successfully with ID: ${id}`);
@@ -440,7 +507,6 @@ export class SeriesService {
       };
     }
   }
-
   /**
    * Delete a series by ID (soft delete)
    */
@@ -448,39 +514,77 @@ export class SeriesService {
     try {
       this.logger.log(`Deleting series with ID: ${id}`);
 
-      // Check if series exists and get thumbnail
+      // Check if series exists and get file information
       const existingSeries = await this.prisma.series.findUnique({
         where: { id },
-        select: { id: true, thumbnail: true },
+        select: {
+          id: true,
+          thumbnail: true,
+          courses: {
+            select: {
+              id: true,
+              intro_video_url: true,
+              end_video_url: true,
+              lesson_files: {
+                select: {
+                  id: true,
+                  url: true,
+                },
+              },
+            },
+          },
+        },
       });
 
       if (!existingSeries) {
         throw new NotFoundException(`Series with ID ${id} not found`);
       }
 
-      // Remove course associations and soft delete the series in a transaction
-      await this.prisma.$transaction(async (prisma) => {
-        // Remove all course associations
-        await prisma.course.updateMany({
-          where: { series_id: id },
-          data: { series_id: null },
-        });
-
-        // Soft delete the series (Prisma middleware will handle this)
-        await prisma.series.delete({
-          where: { id },
-        });
-      });
-
-      // Delete thumbnail file if exists
-      if (existingSeries?.thumbnail) {
-        try {
+      // Delete all associated files before soft deleting the series
+      try {
+        // Delete thumbnail
+        if (existingSeries.thumbnail) {
           await SojebStorage.delete(appConfig().storageUrl.series_thumbnail + existingSeries.thumbnail);
-          this.logger.log(`Deleted thumbnail: ${existingSeries.thumbnail}`);
-        } catch (error) {
-          this.logger.warn(`Failed to delete thumbnail: ${error.message}`);
         }
+
+        // Delete course video files
+        if (existingSeries.courses && existingSeries.courses.length > 0) {
+          for (const course of existingSeries.courses) {
+            if (course.intro_video_url) {
+              try {
+                await SojebStorage.delete(appConfig().storageUrl.module_file + course.intro_video_url);
+              } catch (error) {
+                this.logger.warn(`Failed to delete course intro video: ${error.message}`);
+              }
+            }
+            if (course.end_video_url) {
+              try {
+                await SojebStorage.delete(appConfig().storageUrl.module_file + course.end_video_url);
+              } catch (error) {
+                this.logger.warn(`Failed to delete course end video: ${error.message}`);
+              }
+            }
+            // Delete lesson files
+            if (course.lesson_files && course.lesson_files.length > 0) {
+              for (const lessonFile of course.lesson_files) {
+                try {
+                  await SojebStorage.delete(appConfig().storageUrl.lesson_file + lessonFile.url);
+                } catch (error) {
+                  this.logger.warn(`Failed to delete lesson file: ${error.message}`);
+                }
+              }
+            }
+          }
+        }
+
+      } catch (error) {
+        this.logger.warn(`Failed to delete some files: ${error.message}`);
       }
+
+      // Soft delete the series (Prisma middleware will handle this)
+      await this.prisma.series.delete({
+        where: { id },
+      });
 
       this.logger.log(`Series deleted successfully with ID: ${id}`);
 
@@ -503,4 +607,17 @@ export class SeriesService {
       };
     }
   }
+
+  /**
+   * Get file kind based on MIME type
+   */
+  private getFileKind(mimetype: string): string {
+    if (mimetype.startsWith('image/')) return 'image';
+    if (mimetype.startsWith('video/')) return 'video';
+    if (mimetype.startsWith('audio/')) return 'audio';
+    if (mimetype === 'application/pdf') return 'pdf';
+    if (mimetype.includes('powerpoint') || mimetype.includes('presentation')) return 'slides';
+    return 'other';
+  }
 }
+

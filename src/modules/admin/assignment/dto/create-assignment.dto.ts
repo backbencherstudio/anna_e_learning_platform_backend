@@ -56,11 +56,11 @@ export class CreateAssignmentDto {
 
     @IsOptional()
     @IsString()
-    course_id?: string;
+    series_id?: string;
 
     @IsOptional()
     @IsString()
-    module_id?: string;
+    course_id?: string;
 
     @IsArray()
     @ValidateNested({ each: true })
