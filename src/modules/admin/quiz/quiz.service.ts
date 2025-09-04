@@ -54,8 +54,8 @@ export class QuizService {
             is_published: createQuizDto.is_published || false,
             published_at: createQuizDto.published_at ? new Date(createQuizDto.published_at) : undefined,
             metadata: createQuizDto.metadata,
+            series_id: createQuizDto.series_id,
             course_id: createQuizDto.course_id,
-            module_id: createQuizDto.module_id,
           },
         });
 
@@ -150,7 +150,7 @@ export class QuizService {
             published_at: true,
             created_at: true,
             updated_at: true,
-            course: {
+            series: {
               select: {
                 id: true,
                 title: true,
@@ -224,14 +224,14 @@ export class QuizService {
       const quiz = await this.prisma.quiz.findUnique({
         where: { id },
         include: {
-          course: {
+          series: {
             select: {
               id: true,
               title: true,
               slug: true,
             },
           },
-          module: {
+          course: {
             select: {
               id: true,
               title: true,

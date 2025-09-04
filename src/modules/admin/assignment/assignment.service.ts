@@ -24,8 +24,8 @@ export class AssignmentService {
       }
 
       // Validate that course_id is provided
-      if (!createAssignmentDto.course_id) {
-        throw new BadRequestException('Course ID is required');
+      if (!createAssignmentDto.series_id) {
+        throw new BadRequestException('Series ID is required');
       }
 
       // Calculate total marks if not provided
@@ -45,8 +45,8 @@ export class AssignmentService {
             due_at: createAssignmentDto.due_at ? new Date(createAssignmentDto.due_at) : undefined,
             is_published: createAssignmentDto.is_published || false,
             published_at: createAssignmentDto.published_at ? new Date(createAssignmentDto.published_at) : undefined,
+            series_id: createAssignmentDto.series_id,
             course_id: createAssignmentDto.course_id,
-            module_id: createAssignmentDto.module_id,
           },
         });
 
@@ -132,7 +132,7 @@ export class AssignmentService {
             published_at: true,
             created_at: true,
             updated_at: true,
-            course: {
+            series: {
               select: {
                 id: true,
                 title: true,
@@ -202,7 +202,7 @@ export class AssignmentService {
       const assignment = await this.prisma.assignment.findUnique({
         where: { id },
         include: {
-          course: {
+          series: {
             select: {
               id: true,
               title: true,

@@ -255,13 +255,13 @@ export class LanguageService {
       }
 
       // Check if language is being used by any courses
-      const coursesUsingLanguage = await this.prisma.course.findFirst({
+      const coursesUsingLanguage = await this.prisma.series.findFirst({
         where: { language_id: id },
         select: { id: true },
       });
 
       if (coursesUsingLanguage) {
-        throw new BadRequestException('Cannot delete language as it is being used by courses');
+        throw new BadRequestException('Cannot delete language as it is being used by series');
       }
 
       // Delete the language
