@@ -1,4 +1,4 @@
-export interface CourseResponse<T = any> {
+export interface LanguageResponse<T = any> {
     success: boolean;
     message: string;
     data?: T;

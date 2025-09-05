@@ -81,6 +81,8 @@ export default () => ({
     course_thumbnail: '/course/thumbnail/',
     lesson_file: '/lesson/file/',
     module_file: '/module/file/',
+    series_file: '/series/file/',
+    course_file: '/course/file/',
   },
 
   defaultUser: {
