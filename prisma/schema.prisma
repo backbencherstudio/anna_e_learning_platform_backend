@@ -489,7 +489,7 @@ model Series {
   start_date     DateTime?
   end_date       DateTime?
   thumbnail      String?
-  price          Decimal?
+  total_price    Decimal?
   course_type    String?   @default("regular")
   note           String?
   available_site Int?      @default(0) // "all", "web", "mobile", "app"
@@ -520,6 +520,8 @@ model Course {
   position        Int     @default(0)
   intro_video_url String?
   end_video_url   String?
+
+  price           Decimal?
 
   lesson_files LessonFile[]
   quizzes      Quiz[]

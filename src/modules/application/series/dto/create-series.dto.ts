@@ -1,16 +1,13 @@
 import { Transform, Type } from 'class-transformer';
 import {
     IsDateString, IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, Min, ValidateNested, IsArray,
-} from 'class-validator';
-import { CourseVisibility } from '@prisma/client';
-import { CreateModuleDto } from './create-module.dto';
 
-export class CreateCourseDto {
+} from 'class-validator';
+import { CreateCourseDto } from './create-course.dto';
+
+export class CreateSeriesDto {
     @IsString() @IsNotEmpty() @MaxLength(120)
     title!: string;
-
-    @IsString() @MaxLength(140) @IsOptional()
-    series_id?: string;
 
     @IsOptional() @IsString() @MaxLength(140)
     slug?: string;
@@ -21,8 +18,9 @@ export class CreateCourseDto {
     @IsOptional() @IsString()
     description?: string;
 
-    @IsOptional() @IsEnum(CourseVisibility)
-    visibility?: CourseVisibility;
+    @IsString()
+    @IsOptional()
+    visibility?: string;
 
     @IsOptional() @IsString()
     duration?: string;
@@ -41,13 +39,16 @@ export class CreateCourseDto {
     price?: number;
 
     @IsOptional() @IsString()
-    code_type?: string;
-
-    @IsOptional() @IsString()
     course_type?: string;
 
     @IsOptional() @IsString()
     note?: string;
+
+    @IsOptional() @Transform(({ value }) => value === undefined ? 0 : Number(value))
+    available_site?: number;
+
+    @IsOptional() @IsString()
+    language_id?: string;
 
     @IsOptional()
     @IsArray()
@@ -62,5 +63,5 @@ export class CreateCourseDto {
         }
         return value;  // Return the original value if it's already an array
     })
-    modules?: CreateModuleDto[];
+    courses?: CreateCourseDto[];
 }

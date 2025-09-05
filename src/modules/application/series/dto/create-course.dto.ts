@@ -1,9 +1,8 @@
 import { IsString, IsNotEmpty, IsOptional, IsInt, Min, MaxLength, ValidateNested, IsArray } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CreateLessonDto } from './create-lesson.dto';
 import { CreateLessonFileDto } from './create-lesson-file.dto';
 
-export class CreateModuleDto {
+export class CreateCourseDto {
     @IsString()
     @IsNotEmpty()
     @MaxLength(200)
@@ -27,5 +26,5 @@ export class CreateModuleDto {
     @IsArray()
     @ValidateNested({ each: true })
     @Type(() => CreateLessonFileDto)
-    lessons_files?: CreateLessonDto[];
+    lessons_files?: CreateLessonFileDto[];
 }

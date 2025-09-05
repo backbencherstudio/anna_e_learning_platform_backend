@@ -1,6 +1,4 @@
-import { CourseVisibility } from '@prisma/client';
-
-export class Course {
+export class Series {
     id: string;
     created_at: Date;
     updated_at: Date;
@@ -10,24 +8,24 @@ export class Course {
     slug: string;
     summary?: string;
     description?: string;
-    visibility: CourseVisibility;
+    visibility?: string;
     duration?: string;
     start_date?: Date;
     end_date?: Date;
     thumbnail?: string;
     price?: number;
-    code_type?: string;
     course_type?: string;
     note?: string;
+    available_site?: number;
 
-    series_id?: string;
-    series?: any;
+    language_id: string;
+    language?: any;
 
-    modules?: any[];
+    // Relations
+    courses?: any[];
     quizzes?: any[];
     assignments?: any[];
     enrollments?: any[];
     user_progress?: any[];
     certificates?: any[];
-    lesson_files?: any[];
 }

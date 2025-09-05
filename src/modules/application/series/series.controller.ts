@@ -1,14 +1,14 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UsePipes, ValidationPipe, HttpStatus, HttpCode, UseInterceptors, UploadedFiles, UploadedFile, Req } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
-import { CourseService } from './course.service';
-import { CreateCourseDto } from './dto/create-course.dto';
-import { UpdateCourseDto } from './dto/update-course.dto';
+import { SeriesService } from './series.service';
+import { CreateSeriesDto } from './dto/create-series.dto';
+import { UpdateSeriesDto } from './dto/update-series.dto';
 
 
-@Controller('user/course')
+@Controller('user/series')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
-export class CourseController {
-  constructor(private readonly courseService: CourseService) { }
+export class SeriesController {
+  constructor(private readonly seriesService: SeriesService) { }
 
 
   @Get()
@@ -20,13 +20,12 @@ export class CourseController {
   ) {
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
-    return this.courseService.findAll(pageNum, limitNum, search);
+    return this.seriesService.findAll(pageNum, limitNum, search);
   }
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id') id: string) {
-    return this.courseService.findOne(id);
+    return this.seriesService.findOne(id);
   }
-
 }

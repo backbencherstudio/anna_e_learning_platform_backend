@@ -2,9 +2,9 @@ import { Module } from '@nestjs/common';
 import { NotificationModule } from './notification/notification.module';
 import { ContactModule } from './contact/contact.module';
 import { FaqModule } from './faq/faq.module';
-import { CourseModule } from './course/course.module';
+import { SeriesModule } from './series/series.module';
 
 @Module({
-  imports: [NotificationModule, ContactModule, FaqModule, CourseModule],
+  imports: [NotificationModule, ContactModule, FaqModule, SeriesModule],
 })
 export class ApplicationModule {}
