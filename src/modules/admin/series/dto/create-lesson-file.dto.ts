@@ -9,6 +9,12 @@ export enum LessonFileKind {
 }
 
 export class CreateLessonFileDto {
+
+    @IsOptional()
+    @IsString()
+    @MaxLength(200)
+    title?: string;
+    
     @IsString()
     @IsNotEmpty()
     url!: string;

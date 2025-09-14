@@ -489,7 +489,7 @@ model Series {
   start_date     DateTime?
   end_date       DateTime?
   thumbnail      String?
-  price          Decimal?
+  total_price    Decimal?
   course_type    String?   @default("regular")
   note           String?
   available_site Int?      @default(0) // "all", "web", "mobile", "app"
@@ -517,7 +517,8 @@ model Course {
   series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
   title           String
-  position        Int     @default(0)
+  price           Decimal?
+  position        Int      @default(0)
   intro_video_url String?
   end_video_url   String?
 
@@ -535,6 +536,7 @@ model LessonFile {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
+  title    String?
   url      String
   kind     String  @default("video") // "image","video","pdf","slides"
   alt      String?

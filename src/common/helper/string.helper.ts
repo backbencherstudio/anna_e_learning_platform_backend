@@ -131,4 +131,28 @@ export class StringHelper {
       .join('');
     return `${randomName}-${originalName}`;
   }
+
+
+  /**
+   * Generate a lesson file name in format: lesson-{position}:{title}
+   * @param position - The lesson position/index
+   * @param title - The lesson title
+   * @param originalName - The original file name (for extension)
+   * @returns Formatted lesson file name
+   */
+  public static generateLessonFileName(position: number, title: string, originalName: string): string {
+    // Clean the title to make it file-system safe
+    const cleanTitle = title
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .substring(0, 50); // Limit length
+
+    // Get file extension from original name
+    const extension = originalName.includes('.') ? originalName.split('.').pop() : '';
+
+    // Format: lesson-{position}:{title}.{extension}
+    const baseName = `lesson-${position}:${cleanTitle}`;
+    return extension ? `${baseName}.${extension}` : baseName;
+  }
 }

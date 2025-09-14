@@ -51,6 +51,11 @@ export class SeriesService {
         this.logger.log(`Uploaded thumbnail: ${thumbnailFileName}`);
       }
 
+      // calculate total price
+    if(!createSeriesDto.total_price){
+      createSeriesDto.total_price = createSeriesDto.courses?.reduce((acc, course) => acc + course.price, 0);
+    }
+
       // Create series with courses and lesson files in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
         // Create the series
@@ -65,7 +70,7 @@ export class SeriesService {
             start_date: createSeriesDto.start_date ? new Date(createSeriesDto.start_date) : undefined,
             end_date: createSeriesDto.end_date ? new Date(createSeriesDto.end_date) : undefined,
             thumbnail: thumbnailFileName,
-            price: createSeriesDto.price,
+            total_price: createSeriesDto.total_price,
             course_type: createSeriesDto.course_type,
             note: createSeriesDto.note,
             available_site: createSeriesDto.available_site,
@@ -107,24 +112,27 @@ export class SeriesService {
               },
             });
 
-            // Handle lesson files for this specific course
-            if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
-              this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
-              for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
-                const lessonFile = courseFileData.lessonFiles[j];
-                const fileName = StringHelper.generateRandomFileName(lessonFile.originalname);
-                await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
+           // Handle regular lesson files for this specific course
+           if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
+            this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
+            for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
+              const lessonFile = courseFileData.lessonFiles[j];
+              const lessonFileDto = courseDto.lessons_files?.[j];
+              const lessonTitle = lessonFileDto?.title || lessonFile.originalname.split('.')[0];
+              const fileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, lessonFile.originalname);
+              await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
 
-                await prisma.lessonFile.create({
-                  data: {
-                    course_id: course.id,
-                    url: fileName,
-                    kind: this.getFileKind(lessonFile.mimetype),
-                    alt: lessonFile.originalname,
-                    position: j,
-                  },
-                });
-              }
+              await prisma.lessonFile.create({
+                data: {
+                  course_id: course.id,
+                  title: lessonFileDto?.title || lessonFile.originalname,
+                  url: fileName,
+                  kind: this.getFileKind(lessonFile.mimetype),
+                  alt: lessonFile.originalname,
+                  position: j,
+                },
+              });
+            }
               this.logger.log(`Created ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
             }
           }
@@ -198,7 +206,7 @@ export class SeriesService {
             start_date: true,
             end_date: true,
             thumbnail: true,
-            price: true,
+            total_price: true,
             course_type: true,
             note: true,
             available_site: true,
@@ -216,6 +224,7 @@ export class SeriesService {
                 id: true,
                 title: true,
                 position: true,
+                price: true,
                 created_at: true,
                 updated_at: true,
                 intro_video_url: true,
@@ -223,6 +232,7 @@ export class SeriesService {
                 lesson_files: {
                   select: {
                     id: true,
+                    title: true,
                     url: true,
                     kind: true,
                     alt: true,
