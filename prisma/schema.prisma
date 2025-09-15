@@ -106,6 +106,7 @@ model User {
   enrollments            Enrollment[]
   user_progress          UserProgress[]
   certificates           Certificate[]
+  quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
 
   @@map("users")
 }
@@ -567,9 +568,10 @@ model Quiz {
   published_at DateTime?
   metadata     Json?
 
-  series    Series         @relation(fields: [series_id], references: [id], onDelete: Cascade)
-  course    Course?        @relation(fields: [course_id], references: [id], onDelete: SetNull)
-  questions QuizQuestion[]
+  series      Series           @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  course      Course?          @relation(fields: [course_id], references: [id], onDelete: SetNull)
+  questions   QuizQuestion[]
+  submissions QuizSubmission[]
 
   @@map("quizzes")
 }
@@ -584,21 +586,23 @@ model QuizQuestion {
   points   Int    @default(1)
   position Int    @default(0)
 
-  quiz    Quiz             @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
-  answers QuestionAnswer[] @relation("QuestionAnswer")
+  quiz              Quiz                   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  answers           QuestionAnswer[]       @relation("QuestionAnswer")
+  submissionAnswers QuizSubmissionAnswer[] @relation("QuizSubmissionAnswer")
 
   @@index([quiz_id, position])
   @@map("quiz_questions")
 }
 
 model QuestionAnswer {
-  id          String       @id @default(cuid())
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
-  deleted_at  DateTime?
-  is_correct  Boolean      @default(false)
-  question_id String
-  question    QuizQuestion @relation("QuestionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
+  id                String                 @id @default(cuid())
+  created_at        DateTime               @default(now())
+  updated_at        DateTime               @updatedAt
+  deleted_at        DateTime?
+  is_correct        Boolean                @default(false)
+  question_id       String
+  question          QuizQuestion           @relation("QuestionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
+  submissionAnswers QuizSubmissionAnswer[]
 
   option   String
   position Int    @default(0) // determines A/B/C… label
@@ -606,6 +610,60 @@ model QuestionAnswer {
   @@unique([question_id, position])
   @@index([question_id, position])
   @@map("quiz_question_options")
+}
+
+// ---------- Assessment: Quiz Submission ----------
+model QuizSubmission {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  quiz_id      String
+  user_id      String
+  status       QuizAttemptStatus @default(IN_PROGRESS)
+  score        Int               @default(0)
+  total_marks  Int               @default(0)
+  percentage   Float             @default(0.0)
+  time_taken   Int? // Time taken in seconds
+  started_at   DateTime          @default(now())
+  submitted_at DateTime?
+  graded_at    DateTime?
+  feedback     String?           @db.Text
+  metadata     Json? // Additional data like time limits, attempts allowed, etc.
+
+  quiz    Quiz                   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  user    User                   @relation("QuizSubmission", fields: [user_id], references: [id], onDelete: Cascade)
+  answers QuizSubmissionAnswer[]
+
+  @@unique([quiz_id, user_id]) // One submission per user per quiz
+  @@index([quiz_id, status])
+  @@index([user_id, status])
+  @@index([submitted_at])
+  @@map("quiz_submissions")
+}
+
+model QuizSubmissionAnswer {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  submission_id String
+  question_id   String
+  answer_id     String? // The selected answer ID (for multiple choice)
+  answer_text   String? // For text-based answers
+  is_correct    Boolean @default(false)
+  points_earned Int     @default(0)
+  feedback      String?
+
+  submission QuizSubmission  @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  question   QuizQuestion    @relation("QuizSubmissionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
+  answer     QuestionAnswer? @relation(fields: [answer_id], references: [id], onDelete: SetNull)
+
+  @@unique([submission_id, question_id]) // One answer per question per submission
+  @@index([submission_id])
+  @@index([question_id])
+  @@map("quiz_submission_answers")
 }
 
 // ---------- Assessment: Assignment (Essay) ----------

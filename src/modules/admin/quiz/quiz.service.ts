@@ -4,12 +4,184 @@ import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { QuizResponse } from './interfaces/quiz-response.interface';
 import { Quiz, QuizQuestion, QuestionAnswer } from '@prisma/client';
+import { DateHelper } from 'src/common/helper/date.helper';
 
 @Injectable()
 export class QuizService {
   private readonly logger = new Logger(QuizService.name);
 
   constructor(private readonly prisma: PrismaService) { }
+
+  /**
+   * Get quiz dashboard data - published and unpublished quizzes with submission stats
+   */
+  async getDashboard(query?: { series_id?: string; course_id?: string; limit?: number }): Promise<any> {
+    try {
+      this.logger.log('Fetching quiz dashboard data');
+
+      const limit = query?.limit || 10;
+      const whereClause: any = {};
+
+      if (query?.series_id) {
+        whereClause.series_id = query.series_id;
+      }
+      if (query?.course_id) {
+        whereClause.course_id = query.course_id;
+      }
+
+      const submittedQuizzes = await this.prisma.quiz.findMany({
+        where: {
+          ...whereClause,
+          is_published: true,
+          submissions: {
+            some: {
+              status: {
+                in: ['SUBMITTED', 'GRADED'],
+              },
+            },
+          },
+        },
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          due_at: true,
+          published_at: true,
+          is_published: true,
+          created_at: true,
+          total_marks: true,
+          series: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          course: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          _count: {
+            select: {
+              submissions: true,
+            },
+          },
+          submissions: {
+            select: {
+              id: true,
+              status: true,
+              score: true,
+              percentage: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Fetch published quizzes with submission counts and stats
+      const publishedQuizzes = await this.prisma.quiz.findMany({
+        where: {
+          ...whereClause,
+          is_published: true,
+        },
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          due_at: true,
+          published_at: true,
+          is_published: true,
+          created_at: true,
+          total_marks: true,
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Fetch unpublished quizzes
+      const unpublishedQuizzes = await this.prisma.quiz.findMany({
+        where: {
+          ...whereClause,
+          is_published: false,
+        },
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          due_at: true,
+          published_at: true,
+          is_published: true,
+          created_at: true,
+          total_marks: true,
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Calculate submission statistics for published quizzes
+      const submittedQuizzesWithStats = submittedQuizzes.map(quiz => {
+        const submittedCount = quiz.submissions.filter(s => s.status === 'SUBMITTED' || s.status === 'GRADED').length;
+        const gradedCount = quiz.submissions.filter(s => s.status === 'GRADED').length;
+        const remainingTime = quiz.due_at ? DateHelper.diff(quiz.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
+        const averageScore = gradedCount > 0
+          ? quiz.submissions
+            .filter(s => s.status === 'GRADED')
+            .reduce((sum, s) => sum + (s.percentage || 0), 0) / gradedCount
+          : 0;
+
+        return {
+          ...quiz,
+          submission_count: submittedCount,
+          total_students: 34,  //todo: This should be calculated from actual enrollments
+        };
+      });
+
+      const publishedQuizzesWithStats = publishedQuizzes.map(quiz => {
+        const remainingTime = quiz.due_at ? DateHelper.diff(quiz.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
+        return {
+          ...quiz,
+          remaining_time: remainingTime,
+        };
+      });
+
+      // Get counts for summary
+      const [totalPublishedQuizzes, totalUnpublishedQuizzes, totalQuizSubmissions] = await Promise.all([
+        this.prisma.quiz.count({ where: { ...whereClause, is_published: true } }),
+        this.prisma.quiz.count({ where: { ...whereClause, is_published: false } }),
+        this.prisma.quizSubmission.count({
+          where: {
+            quiz: whereClause,
+            status: { in: ['SUBMITTED', 'GRADED'] }
+          }
+        }),
+      ]);
+
+      return {
+        success: true,
+        message: 'Quiz dashboard data retrieved successfully',
+        data: {
+          submitted_quizzes: submittedQuizzesWithStats,
+          published_quizzes: publishedQuizzesWithStats,
+          unpublished_quizzes: unpublishedQuizzes,
+          total_published_quizzes: totalPublishedQuizzes,
+          total_unpublished_quizzes: totalUnpublishedQuizzes,
+          total_submissions: totalQuizSubmissions,
+          summary: {
+            total_quizzes: totalPublishedQuizzes + totalUnpublishedQuizzes,
+            active_quizzes: totalPublishedQuizzes,
+            pending_publication: totalUnpublishedQuizzes,
+            total_submissions: totalQuizSubmissions,
+          }
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching quiz dashboard data: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: 'Failed to fetch quiz dashboard data',
+        error: error.message,
+      };
+    }
+  }
 
   /**
    * Create a new quiz with questions and answers
@@ -149,7 +321,6 @@ export class QuizService {
             is_published: true,
             published_at: true,
             created_at: true,
-            updated_at: true,
             series: {
               select: {
                 id: true,

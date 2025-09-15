@@ -7,12 +7,16 @@ import { StringHelper } from '../../../common/helper/string.helper';
 import { Series } from '@prisma/client';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
+import { ChunkedUploadService } from '../../../common/lib/upload/ChunkedUploadService';
 
 @Injectable()
 export class SeriesService {
   private readonly logger = new Logger(SeriesService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly chunkedUploadService: ChunkedUploadService
+  ) { }
 
   /**
    * Create a new series with optional courses and lesson files
@@ -25,6 +29,11 @@ export class SeriesService {
       introVideo?: Express.Multer.File;
       endVideo?: Express.Multer.File;
       lessonFiles?: Express.Multer.File[];
+      // chunkedUploads?: {
+      //   uploadId: string;
+      //   fileName: string;
+      //   lessonTitle?: string;
+      // }[];
     }[]
   ): Promise<SeriesResponse<Series>> {
 
@@ -52,9 +61,9 @@ export class SeriesService {
       }
 
       // calculate total price
-    if(!createSeriesDto.total_price){
-      createSeriesDto.total_price = createSeriesDto.courses?.reduce((acc, course) => acc + course.price, 0);
-    }
+      if (!createSeriesDto.total_price) {
+        createSeriesDto.total_price = createSeriesDto.courses?.reduce((acc, course) => acc + course.price, 0);
+      }
 
       // Create series with courses and lesson files in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
@@ -112,29 +121,80 @@ export class SeriesService {
               },
             });
 
-           // Handle regular lesson files for this specific course
-           if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
-            this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
-            for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
-              const lessonFile = courseFileData.lessonFiles[j];
-              const lessonFileDto = courseDto.lessons_files?.[j];
-              const lessonTitle = lessonFileDto?.title || lessonFile.originalname.split('.')[0];
-              const fileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, lessonFile.originalname);
-              await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
+            // Handle regular lesson files for this specific course
+            if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
+              this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
+              for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
+                const lessonFile = courseFileData.lessonFiles[j];
+                const lessonFileDto = courseDto.lessons_files?.[j];
+                const lessonTitle = lessonFileDto?.title || lessonFile.originalname.split('.')[0];
+                const fileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, lessonFile.originalname);
+                await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
 
-              await prisma.lessonFile.create({
-                data: {
-                  course_id: course.id,
-                  title: lessonFileDto?.title || lessonFile.originalname,
-                  url: fileName,
-                  kind: this.getFileKind(lessonFile.mimetype),
-                  alt: lessonFile.originalname,
-                  position: j,
-                },
-              });
-            }
+                await prisma.lessonFile.create({
+                  data: {
+                    course_id: course.id,
+                    title: lessonFileDto?.title || lessonFile.originalname,
+                    url: fileName,
+                    kind: this.getFileKind(lessonFile.mimetype),
+                    alt: lessonFile.originalname,
+                    position: j,
+                  },
+                });
+              }
               this.logger.log(`Created ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
             }
+
+            // Handle chunked uploads for this specific course
+            // if (courseFileData?.chunkedUploads && courseFileData.chunkedUploads.length > 0) {
+            //   this.logger.log(`Processing ${courseFileData.chunkedUploads.length} chunked uploads for course ${i}`);
+            //   for (let j = 0; j < courseFileData.chunkedUploads.length; j++) {
+            //     const chunkedUpload = courseFileData.chunkedUploads[j];
+
+            //     // Finalize the chunked upload
+            //     const uploadResult = await this.chunkedUploadService.finalizeUpload({
+            //       uploadId: chunkedUpload.uploadId,
+            //       finalFileName: chunkedUpload.fileName
+            //     });
+
+            //     if (uploadResult.success) {
+            //       const lessonTitle = chunkedUpload.lessonTitle || chunkedUpload.fileName.split('.')[0];
+            //       const finalFileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, chunkedUpload.fileName);
+
+            //       // Rename the file to the final name if needed
+            //       if (uploadResult.fileName !== finalFileName) {
+            //         const oldKey = appConfig().storageUrl.lesson_file + uploadResult.fileName;
+            //         const newKey = appConfig().storageUrl.lesson_file + finalFileName;
+
+            //         // Move the file to the new name
+            //         const fileExists = await SojebStorage.isExists(oldKey);
+            //         if (fileExists) {
+            //           const fileData = await SojebStorage.get(oldKey);
+            //           await SojebStorage.put(newKey, fileData);
+            //           await SojebStorage.delete(oldKey);
+            //         }
+            //       }
+
+            //       // Create lesson file record
+            //       await prisma.lessonFile.create({
+            //         data: {
+            //           course_id: course.id,
+            //           title: lessonTitle,
+            //           url: finalFileName,
+            //           kind: this.getFileKindFromFileName(chunkedUpload.fileName),
+            //           alt: chunkedUpload.fileName,
+            //           position: j + (courseFileData.lessonFiles?.length || 0), // Offset by regular files
+            //         },
+            //       });
+
+            //       this.logger.log(`Created chunked upload lesson file: ${finalFileName}`);
+            //     } else {
+            //       this.logger.error(`Failed to finalize chunked upload: ${chunkedUpload.uploadId}`);
+            //       throw new BadRequestException(`Failed to finalize chunked upload: ${uploadResult.message}`);
+            //     }
+            //   }
+            //   this.logger.log(`Created ${courseFileData.chunkedUploads.length} chunked upload lesson files for course ${i}`);
+            // }
           }
           this.logger.log(`Created ${createSeriesDto.courses.length} courses for series`);
         }
@@ -628,6 +688,39 @@ export class SeriesService {
     if (mimetype === 'application/pdf') return 'pdf';
     if (mimetype.includes('powerpoint') || mimetype.includes('presentation')) return 'slides';
     return 'other';
+  }
+
+  /**
+   * Get file kind based on file extension
+   */
+  private getFileKindFromFileName(fileName: string): string {
+    const ext = fileName.split('.').pop()?.toLowerCase();
+
+    switch (ext) {
+      case 'mp4':
+      case 'webm':
+      case 'ogg':
+      case 'avi':
+      case 'mov':
+      case 'wmv':
+        return 'video';
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+        return 'image';
+      case 'mp3':
+      case 'wav':
+      case 'ogg':
+        return 'audio';
+      case 'pdf':
+        return 'pdf';
+      case 'ppt':
+      case 'pptx':
+        return 'slides';
+      default:
+        return 'other';
+    }
   }
 }
 
