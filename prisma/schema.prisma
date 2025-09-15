@@ -260,6 +260,9 @@ model PaymentTransaction {
   user_id String?
   user    User?   @relation(fields: [user_id], references: [id])
 
+  enrollment_id String?
+  enrollment    Enrollment? @relation(fields: [enrollment_id], references: [id])
+
   order_id         String?
   type             String?  @default("order")
   withdraw_via     String?  @default("wallet")
@@ -790,9 +793,25 @@ model Enrollment {
   progress_percentage Int       @default(0)
   last_accessed_at    DateTime?
 
+  payment_status           String?  @default("pending")
+  // raw status from payment provider
+  payment_raw_status       String?
+  // paid amount from payment provider
+  paid_amount              Decimal?
+  // paid currency from payment provider
+  paid_currency            String?
+  // e.g. stripe, paypal, razorpay
+  payment_provider         String?
+  // e.g. stripe payment reference id
+  payment_reference_number String?
+
+  payment_provider_charge_type String?  @default("percentage") // e.g. fixed, percentage
+  payment_provider_charge      Decimal? // e.g. stripe payment provider charge
+
   // Relations
-  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  series Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  user                 User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  series               Series               @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  payment_transactions PaymentTransaction[]
 
   @@unique([user_id, series_id])
   @@map("enrollments")

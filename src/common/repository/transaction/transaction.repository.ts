@@ -8,21 +8,21 @@ export class TransactionRepository {
    * @returns
    */
   static async createTransaction({
-    booking_id,
+    enrollment_id,
     amount,
     currency,
     reference_number,
     status = 'pending',
   }: {
-    booking_id: string;
+    enrollment_id: string;
     amount?: number;
     currency?: string;
     reference_number?: string;
     status?: string;
   }) {
     const data = {};
-    if (booking_id) {
-      data['booking_id'] = booking_id;
+    if (enrollment_id) {
+      data['enrollment_id'] = enrollment_id;
     }
     if (amount) {
       data['amount'] = Number(amount);

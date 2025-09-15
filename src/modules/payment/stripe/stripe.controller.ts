@@ -2,10 +2,12 @@ import { Controller, Post, Req, Headers } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 import { Request } from 'express';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { EnrollmentService } from 'src/modules/student/enrollment/enrollment.service';
 
 @Controller('payment/stripe')
 export class StripeController {
-  constructor(private readonly stripeService: StripeService) {}
+  constructor(private readonly stripeService: StripeService) { }
 
   @Post('webhook')
   async handleWebhook(
@@ -36,6 +38,13 @@ export class StripeController {
             paid_currency: paymentIntent.currency,
             raw_status: paymentIntent.status,
           });
+
+          // Handle enrollment payment success
+          if (paymentIntent.metadata && paymentIntent.metadata.enrollmentId) {
+            const prisma = new PrismaService();
+            const enrollmentService = new EnrollmentService(prisma);
+            await enrollmentService.handlePaymentSuccess(paymentIntent.id);
+          }
           break;
         case 'payment_intent.payment_failed':
           const failedPaymentIntent = event.data.object;
