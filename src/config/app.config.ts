@@ -83,6 +83,8 @@ export default () => ({
     module_file: '/module/file/',
     series_file: '/series/file/',
     course_file: '/course/file/',
+    materials_file: '/materials/file/',
+    teacher_section_file: '/teacher-section/file/',
   },
 
   defaultUser: {

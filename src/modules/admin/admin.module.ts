@@ -9,6 +9,8 @@ import { QuizModule } from './quiz/quiz.module';
 import { AssignmentModule } from './assignment/assignment.module';
 import { LanguageModule } from './language/language.module';
 import { SeriesModule } from './series/series.module';
+import { MaterialsModule } from './materials/materials.module';
+import { TeacherSectionModule } from './teacher-section/teacher-section.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { SeriesModule } from './series/series.module';
     AssignmentModule,
     LanguageModule,
     SeriesModule,
+    MaterialsModule,
+    TeacherSectionModule,
   ],
 })
 export class AdminModule { }

@@ -1,5 +1,5 @@
 import { IsString, IsNotEmpty, IsOptional, IsInt, Min, MaxLength, ValidateNested, IsArray } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { CreateLessonFileDto } from './create-lesson-file.dto';
 
 export class CreateCourseDto {
@@ -13,6 +13,13 @@ export class CreateCourseDto {
     @IsInt()
     @Min(0)
     position?: number;
+
+    @IsOptional()
+    @Transform(({ value }) => value === undefined ? undefined : Number(value))
+    @Type(() => Number)
+    @IsInt()
+    @Min(0)
+    price?: number;
 
     @IsOptional()
     @IsString()

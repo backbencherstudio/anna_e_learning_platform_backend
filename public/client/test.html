@@ -1,0 +1,243 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Enrollment Payment</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://js.stripe.com/v3"></script>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial,
+          sans-serif;
+        margin: 24px;
+      }
+      .row {
+        margin-bottom: 12px;
+      }
+      label {
+        display: block;
+        margin-bottom: 6px;
+        font-weight: 600;
+      }
+      input,
+      select {
+        width: 100%;
+        max-width: 520px;
+        padding: 8px;
+      }
+      button {
+        padding: 10px 14px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .card {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 16px;
+        max-width: 560px;
+      }
+      #card-element {
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+      }
+      #log {
+        white-space: pre-wrap;
+        background: #0b1020;
+        color: #c7e1ff;
+        padding: 12px;
+        border-radius: 6px;
+        max-width: 720px;
+        overflow: auto;
+      }
+      .ok {
+        color: #0a7f27;
+      }
+      .err {
+        color: #b00020;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>Enrollment Payment</h2>
+
+    <div class="card">
+      <div class="row">
+        <label>API Base URL</label>
+        <input
+          id="apiBase"
+          value="http://localhost:4000/api/student/enrollment"
+        />
+      </div>
+
+      <div class="row">
+        <label>Bearer Token</label>
+        <input
+          id="bearer"
+          value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InN0dWRlbnRAZ21haWwuY29tIiwic3ViIjoiY21ma3hnMDN6MDAwMHdzaWc1d2R6aHRoOSIsImlhdCI6MTc1NzkyODg0OSwiZXhwIjoxNzU4MDE1MjQ5fQ.4diLlSSfxi_JY36p3pjqsfpTROOxhNU961hZaQS108E"
+        />
+      </div>
+
+      <div class="row">
+        <label>Stripe Publishable Key</label>
+        <input
+          id="pk"
+          value="pk_test_51RgIDjGbZdiSzPj89wef1vxHaK0jRa4fAUcYFU1KT1mhNBvhgmfwmUWLwaLuV8YEqpae9XdgIwi3cAwHaQ0bxniz00QSaaPJgY"
+        />
+      </div>
+
+      <div class="row">
+        <label>Series ID</label>
+        <input id="seriesId" value="cmfklffzr0001wsp8r8294huy" />
+      </div>
+
+      <div class="row">
+        <label>Currency</label>
+        <select id="currency">
+          <option value="usd" selected>usd</option>
+          <option value="eur">eur</option>
+          <option value="gbp">gbp</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <button id="createIntentBtn">1) Create Payment Intent</button>
+      </div>
+
+      <div id="paymentArea" style="display: none">
+        <div class="row">
+          <label>Card</label>
+          <div id="card-element"></div>
+        </div>
+        <div class="row">
+          <label>Billing Name</label>
+          <input id="billingName" placeholder="Your name" />
+        </div>
+        <div class="row">
+          <label>Billing Email</label>
+          <input id="billingEmail" placeholder="you@example.com" />
+        </div>
+        <div class="row">
+          <button id="payBtn">2) Pay</button>
+        </div>
+        <div class="row">
+          <div>Payment Intent: <span id="piId"></span></div>
+          <div>Amount: <span id="amount"></span> <span id="cur"></span></div>
+          <div>Status: <span id="status"></span></div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Logs</h3>
+    <div id="log"></div>
+
+    <script>
+      let stripe, elements, card, clientSecret;
+
+      function log(msg, type) {
+        const el = document.getElementById('log');
+        const line = document.createElement('div');
+        line.className = type === 'error' ? 'err' : 'ok';
+        line.textContent = msg;
+        el.appendChild(line);
+        el.scrollTop = el.scrollHeight;
+      }
+
+      document
+        .getElementById('createIntentBtn')
+        .addEventListener('click', async () => {
+          try {
+            const apiBase = document.getElementById('apiBase').value.trim();
+            const token = document.getElementById('bearer').value.trim();
+            const pk = document.getElementById('pk').value.trim();
+            const seriesId = document.getElementById('seriesId').value.trim();
+            const currency = document.getElementById('currency').value;
+
+            if (!pk) {
+              log('Missing publishable key', 'error');
+              return;
+            }
+            if (!seriesId) {
+              log('Missing series_id', 'error');
+              return;
+            }
+
+            // Create payment intent via backend (apiBase is the full endpoint)
+            const res = await fetch(apiBase, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: 'Bearer ' + token,
+              },
+              body: JSON.stringify({ series_id: seriesId, currency }),
+            });
+
+            const json = await res.json();
+            if (!res.ok || !json?.success) {
+              log('Create intent failed: ' + JSON.stringify(json), 'error');
+              return;
+            }
+
+            clientSecret = json.data.client_secret;
+            document.getElementById('piId').textContent =
+              json.data.payment_intent_id || '';
+            document.getElementById('amount').textContent =
+              json.data.amount ?? '';
+            document.getElementById('cur').textContent =
+              json.data.currency ?? '';
+            document.getElementById('status').textContent =
+              json.data.status ?? '';
+
+            // Init Stripe Elements
+            stripe = Stripe(pk);
+            elements = stripe.elements();
+            if (!card) {
+              card = elements.create('card');
+              card.mount('#card-element');
+            }
+
+            document.getElementById('paymentArea').style.display = 'block';
+            log('Payment intent created', 'ok');
+          } catch (e) {
+            log('Unexpected error: ' + (e?.message || e), 'error');
+          }
+        });
+
+      document.getElementById('payBtn').addEventListener('click', async () => {
+        try {
+          if (!stripe || !clientSecret) {
+            log('No client secret or Stripe not initialized', 'error');
+            return;
+          }
+
+          const billingDetails = {
+            name: document.getElementById('billingName').value || undefined,
+            email: document.getElementById('billingEmail').value || undefined,
+          };
+
+          const { error, paymentIntent } = await stripe.confirmCardPayment(
+            clientSecret,
+            {
+              payment_method: { card, billing_details: billingDetails },
+            },
+          );
+
+          if (error) {
+            log('Payment error: ' + error.message, 'error');
+            return;
+          }
+
+          log('Payment status: ' + paymentIntent.status, 'ok');
+          document.getElementById('status').textContent = paymentIntent.status;
+        } catch (e) {
+          log('Unexpected error: ' + (e?.message || e), 'error');
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,14 +1,20 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UsePipes, ValidationPipe, HttpStatus, HttpCode, UseInterceptors, UploadedFiles, UploadedFile, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UsePipes, ValidationPipe, HttpStatus, HttpCode, UseInterceptors, UploadedFiles, UploadedFile, Req, Logger } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { SeriesService } from './series.service';
 import { CreateSeriesDto } from './dto/create-series.dto';
 import { UpdateSeriesDto } from './dto/update-series.dto';
+import { ChunkedUploadService } from '../../../common/lib/upload/ChunkedUploadService';
 
 
 @Controller('admin/series')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class SeriesController {
-  constructor(private readonly seriesService: SeriesService) { }
+  private readonly logger = new Logger(SeriesController.name);
+
+  constructor(
+    private readonly seriesService: SeriesService,
+    private readonly chunkedUploadService: ChunkedUploadService
+  ) { }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
@@ -134,6 +140,57 @@ export class SeriesController {
   async remove(@Param('id') id: string) {
     return this.seriesService.remove(id);
   }
+
+  /**
+   * Create series with chunked uploads
+   */
+  // @Post('create-with-chunks')
+  // @HttpCode(HttpStatus.CREATED)
+  // async createWithChunkedUploads(
+  //   @Body() createSeriesDto: CreateSeriesDto & {
+  //     chunkedUploads?: {
+  //       courseIndex: number;
+  //       uploadId: string;
+  //       fileName: string;
+  //       lessonTitle?: string;
+  //     }[];
+  //   }
+  // ) {
+  //   try {
+  //     this.logger.log('Creating series with chunked uploads');
+
+  //     // Parse chunked uploads by course
+  //     const courseFiles = [];
+  //     const chunkedUploads = createSeriesDto.chunkedUploads || [];
+
+  //     // Group chunked uploads by course index
+  //     const uploadsByCourse = chunkedUploads.reduce((acc, upload) => {
+  //       if (!acc[upload.courseIndex]) {
+  //         acc[upload.courseIndex] = [];
+  //       }
+  //       acc[upload.courseIndex].push(upload);
+  //       return acc;
+  //     }, {} as Record<number, any[]>);
+
+  //     // Create course files structure
+  //     for (let i = 0; i < (createSeriesDto.courses?.length || 0); i++) {
+  //       if (uploadsByCourse[i] || i < 10) {
+  //         courseFiles.push({
+  //           courseIndex: i,
+  //           chunkedUploads: uploadsByCourse[i] || []
+  //         });
+  //       }
+  //     }
+
+  //     return this.seriesService.create(createSeriesDto, null, courseFiles);
+  //   } catch (error) {
+  //     this.logger.error(`Error creating series with chunked uploads: ${error.message}`);
+  //     return {
+  //       success: false,
+  //       message: error.message
+  //     };
+  //   }
+  // }
 
   /**
    * Parse module files from uploaded files

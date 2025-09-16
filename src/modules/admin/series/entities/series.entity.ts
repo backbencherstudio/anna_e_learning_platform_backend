@@ -13,7 +13,7 @@ export class Series {
     start_date?: Date;
     end_date?: Date;
     thumbnail?: string;
-    price?: number;
+    total_price?: number;
     course_type?: string;
     note?: string;
     available_site?: number;

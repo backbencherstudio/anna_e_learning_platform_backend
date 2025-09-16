@@ -2,11 +2,28 @@ import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UsePipes, Val
 import { QuizService } from './quiz.service';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
+import { DashboardQueryDto } from './dto/dashboard.dto';
 
 @Controller('admin/quiz')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class QuizController {
   constructor(private readonly quizService: QuizService) { }
+
+
+  @Get('dashboard')
+  @HttpCode(HttpStatus.OK)
+  async getDashboard(
+    @Query('series_id') series_id?: string,
+    @Query('course_id') course_id?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.quizService.getDashboard({
+      series_id,
+      course_id,
+      limit: limitNum,
+    });
+  }
 
   @Post()
   @HttpCode(HttpStatus.CREATED)

@@ -36,7 +36,7 @@ export class CreateSeriesDto {
 
     @IsOptional()
     @Transform(({ value }) => (value === undefined ? undefined : Number(value)))
-    price?: number;
+    total_price?: number;
 
     @IsOptional() @IsString()
     course_type?: string;

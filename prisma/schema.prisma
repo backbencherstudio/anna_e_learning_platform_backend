@@ -106,6 +106,7 @@ model User {
   enrollments            Enrollment[]
   user_progress          UserProgress[]
   certificates           Certificate[]
+  quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
 
   @@map("users")
 }
@@ -258,6 +259,9 @@ model PaymentTransaction {
 
   user_id String?
   user    User?   @relation(fields: [user_id], references: [id])
+
+  enrollment_id String?
+  enrollment    Enrollment? @relation(fields: [enrollment_id], references: [id])
 
   order_id         String?
   type             String?  @default("order")
@@ -489,7 +493,7 @@ model Series {
   start_date     DateTime?
   end_date       DateTime?
   thumbnail      String?
-  price          Decimal?
+  total_price    Decimal?
   course_type    String?   @default("regular")
   note           String?
   available_site Int?      @default(0) // "all", "web", "mobile", "app"
@@ -497,12 +501,13 @@ model Series {
   language_id String
   language    Language @relation(fields: [language_id], references: [id])
 
-  courses       Course[]
-  quizzes       Quiz[]
-  assignments   Assignment[]
-  enrollments   Enrollment[]
-  user_progress UserProgress[]
-  certificates  Certificate[]
+  courses         Course[]
+  quizzes         Quiz[]
+  assignments     Assignment[]
+  enrollments     Enrollment[]
+  user_progress   UserProgress[]
+  certificates    Certificate[]
+  materials_files MaterialsFile[]
 
   @@map("series")
 }
@@ -517,13 +522,15 @@ model Course {
   series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
   title           String
-  position        Int     @default(0)
+  price           Decimal?
+  position        Int      @default(0)
   intro_video_url String?
   end_video_url   String?
 
-  lesson_files LessonFile[]
-  quizzes      Quiz[]
-  assignments  Assignment[]
+  lesson_files    LessonFile[]
+  quizzes         Quiz[]
+  assignments     Assignment[]
+  materials_files MaterialsFile[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -535,6 +542,7 @@ model LessonFile {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
+  title    String?
   url      String
   kind     String  @default("video") // "image","video","pdf","slides"
   alt      String?
@@ -545,6 +553,45 @@ model LessonFile {
 
   @@index([course_id])
   @@map("lesson_files")
+}
+
+model MaterialsFile {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  title       String
+  description String?
+  url         String?
+  type        String?
+  position    Int     @default(0)
+
+  series_id String?
+  series    Series? @relation(fields: [series_id], references: [id])
+
+  course_id String?
+  course    Course? @relation(fields: [course_id], references: [id])
+}
+
+
+model TeacherSection {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  section_type String
+  title String
+  description String?
+  duration String?
+  release_date DateTime?
+  position Int @default(0)
+  status String @default("published") // scheduled, released, archived
+  view_count Int @default(0)
+  file_url String?
+
+  @@map("teacher_sections")
 }
 
 // ---------- Assessment: Quiz ----------
@@ -565,9 +612,10 @@ model Quiz {
   published_at DateTime?
   metadata     Json?
 
-  series    Series         @relation(fields: [series_id], references: [id], onDelete: Cascade)
-  course    Course?        @relation(fields: [course_id], references: [id], onDelete: SetNull)
-  questions QuizQuestion[]
+  series      Series           @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  course      Course?          @relation(fields: [course_id], references: [id], onDelete: SetNull)
+  questions   QuizQuestion[]
+  submissions QuizSubmission[]
 
   @@map("quizzes")
 }
@@ -582,21 +630,23 @@ model QuizQuestion {
   points   Int    @default(1)
   position Int    @default(0)
 
-  quiz    Quiz             @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
-  answers QuestionAnswer[] @relation("QuestionAnswer")
+  quiz              Quiz                   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  answers           QuestionAnswer[]       @relation("QuestionAnswer")
+  submissionAnswers QuizSubmissionAnswer[] @relation("QuizSubmissionAnswer")
 
   @@index([quiz_id, position])
   @@map("quiz_questions")
 }
 
 model QuestionAnswer {
-  id          String       @id @default(cuid())
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
-  deleted_at  DateTime?
-  is_correct  Boolean      @default(false)
-  question_id String
-  question    QuizQuestion @relation("QuestionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
+  id                String                 @id @default(cuid())
+  created_at        DateTime               @default(now())
+  updated_at        DateTime               @updatedAt
+  deleted_at        DateTime?
+  is_correct        Boolean                @default(false)
+  question_id       String
+  question          QuizQuestion           @relation("QuestionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
+  submissionAnswers QuizSubmissionAnswer[]
 
   option   String
   position Int    @default(0) // determines A/B/C… label
@@ -604,6 +654,60 @@ model QuestionAnswer {
   @@unique([question_id, position])
   @@index([question_id, position])
   @@map("quiz_question_options")
+}
+
+// ---------- Assessment: Quiz Submission ----------
+model QuizSubmission {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  quiz_id      String
+  user_id      String
+  status       QuizAttemptStatus @default(IN_PROGRESS)
+  score        Int               @default(0)
+  total_marks  Int               @default(0)
+  percentage   Float             @default(0.0)
+  time_taken   Int? // Time taken in seconds
+  started_at   DateTime          @default(now())
+  submitted_at DateTime?
+  graded_at    DateTime?
+  feedback     String?           @db.Text
+  metadata     Json? // Additional data like time limits, attempts allowed, etc.
+
+  quiz    Quiz                   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
+  user    User                   @relation("QuizSubmission", fields: [user_id], references: [id], onDelete: Cascade)
+  answers QuizSubmissionAnswer[]
+
+  @@unique([quiz_id, user_id]) // One submission per user per quiz
+  @@index([quiz_id, status])
+  @@index([user_id, status])
+  @@index([submitted_at])
+  @@map("quiz_submissions")
+}
+
+model QuizSubmissionAnswer {
+  id         String   @id @default(cuid())
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  submission_id String
+  question_id   String
+  answer_id     String? // The selected answer ID (for multiple choice)
+  answer_text   String? // For text-based answers
+  is_correct    Boolean @default(false)
+  points_earned Int     @default(0)
+  feedback      String?
+
+  submission QuizSubmission  @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  question   QuizQuestion    @relation("QuizSubmissionAnswer", fields: [question_id], references: [id], onDelete: Cascade)
+  answer     QuestionAnswer? @relation(fields: [answer_id], references: [id], onDelete: SetNull)
+
+  @@unique([submission_id, question_id]) // One answer per question per submission
+  @@index([submission_id])
+  @@index([question_id])
+  @@map("quiz_submission_answers")
 }
 
 // ---------- Assessment: Assignment (Essay) ----------
@@ -730,9 +834,25 @@ model Enrollment {
   progress_percentage Int       @default(0)
   last_accessed_at    DateTime?
 
+  payment_status           String?  @default("pending")
+  // raw status from payment provider
+  payment_raw_status       String?
+  // paid amount from payment provider
+  paid_amount              Decimal?
+  // paid currency from payment provider
+  paid_currency            String?
+  // e.g. stripe, paypal, razorpay
+  payment_provider         String?
+  // e.g. stripe payment reference id
+  payment_reference_number String?
+
+  payment_provider_charge_type String?  @default("percentage") // e.g. fixed, percentage
+  payment_provider_charge      Decimal? // e.g. stripe payment provider charge
+
   // Relations
-  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  series Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  user                 User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  series               Series               @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  payment_transactions PaymentTransaction[]
 
   @@unique([user_id, series_id])
   @@map("enrollments")
