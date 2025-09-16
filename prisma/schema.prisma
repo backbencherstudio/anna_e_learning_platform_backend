@@ -501,12 +501,13 @@ model Series {
   language_id String
   language    Language @relation(fields: [language_id], references: [id])
 
-  courses       Course[]
-  quizzes       Quiz[]
-  assignments   Assignment[]
-  enrollments   Enrollment[]
-  user_progress UserProgress[]
-  certificates  Certificate[]
+  courses         Course[]
+  quizzes         Quiz[]
+  assignments     Assignment[]
+  enrollments     Enrollment[]
+  user_progress   UserProgress[]
+  certificates    Certificate[]
+  materials_files MaterialsFile[]
 
   @@map("series")
 }
@@ -526,9 +527,10 @@ model Course {
   intro_video_url String?
   end_video_url   String?
 
-  lesson_files LessonFile[]
-  quizzes      Quiz[]
-  assignments  Assignment[]
+  lesson_files    LessonFile[]
+  quizzes         Quiz[]
+  assignments     Assignment[]
+  materials_files MaterialsFile[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -551,6 +553,25 @@ model LessonFile {
 
   @@index([course_id])
   @@map("lesson_files")
+}
+
+model MaterialsFile {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  title       String
+  description String?
+  url         String?
+  type        String?
+  position    Int     @default(0)
+
+  series_id String?
+  series    Series? @relation(fields: [series_id], references: [id])
+
+  course_id String?
+  course    Course? @relation(fields: [course_id], references: [id])
 }
 
 // ---------- Assessment: Quiz ----------

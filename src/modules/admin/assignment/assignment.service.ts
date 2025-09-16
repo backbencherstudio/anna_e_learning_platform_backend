@@ -4,6 +4,7 @@ import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { AssignmentResponse } from './interfaces/assignment-response.interface';
 import { Assignment, AssignmentQuestion } from '@prisma/client';
+import { DateHelper } from 'src/common/helper/date.helper';
 
 @Injectable()
 export class AssignmentService {
@@ -96,6 +97,202 @@ export class AssignmentService {
       return {
         success: false,
         message: 'Failed to create assignment',
+        error: error.message,
+      };
+    }
+  }
+
+  async getDashboard(query?: { series_id?: string; course_id?: string; limit?: number }): Promise<any> {
+    try {
+      this.logger.log('Fetching assignment dashboard data');
+
+      const limit = query?.limit || 10;
+      const whereClause: any = {};
+
+      if (query?.series_id) {
+        whereClause.series_id = query.series_id;
+      }
+      if (query?.course_id) {
+        whereClause.course_id = query.course_id;
+      }
+
+      // Fetch assignments with submissions
+      const assignmentsWithSubmissions = await this.prisma.assignment.findMany({
+        where: {
+          ...whereClause,
+          is_published: true,
+        },
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          due_at: true,
+          published_at: true,
+          is_published: true,
+          created_at: true,
+          total_marks: true,
+          series: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          course: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          _count: {
+            select: {
+              submissions: true,
+            },
+          },
+          submissions: {
+            select: {
+              id: true,
+              status: true,
+              total_marks: true,
+              overall_feedback: true,
+              graded_at: true,
+              graded_by_id: true,
+              graded_by: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Fetch published assignments
+      const publishedAssignments = await this.prisma.assignment.findMany({
+        where: {
+          ...whereClause,
+          is_published: true,
+        },
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          due_at: true,
+          published_at: true,
+          is_published: true,
+          created_at: true,
+          total_marks: true,
+          series: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          course: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Fetch unpublished assignments
+      const unpublishedAssignments = await this.prisma.assignment.findMany({
+        where: {
+          ...whereClause,
+          is_published: false,
+        },
+        take: limit,
+        select: {
+          id: true,
+          title: true,
+          due_at: true,
+          published_at: true,
+          is_published: true,
+          created_at: true,
+          total_marks: true,
+          series: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+          course: {
+            select: {
+              id: true,
+              title: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+      });
+
+      // Calculate submission statistics for assignments
+      const assignmentsWithStats = assignmentsWithSubmissions.map(assignment => {
+        const submittedCount = assignment.submissions.filter(s => s.status === 'SUBMITTED' || s.status === 'GRADED').length;
+        const gradedCount = assignment.submissions.filter(s => s.status === 'GRADED').length;
+        const remainingTime = assignment.due_at ? DateHelper.diff(assignment.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
+        const averageScore = gradedCount > 0
+          ? assignment.submissions
+            .filter(s => s.status === 'GRADED')
+            .reduce((sum, s) => sum + (s.total_marks || 0), 0) / gradedCount
+          : 0;
+
+        return {
+          ...assignment,
+          submission_count: submittedCount,
+          graded_count: gradedCount,
+          average_score: averageScore,
+          remaining_time: remainingTime,
+        };
+      });
+
+      const publishedAssignmentsWithStats = publishedAssignments.map(assignment => {
+        const remainingTime = assignment.due_at ? DateHelper.diff(assignment.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
+        return {
+          ...assignment,
+          remaining_time: remainingTime,
+        };
+      });
+
+      // Get counts for summary
+      const [totalPublishedAssignments, totalUnpublishedAssignments, totalAssignmentSubmissions] = await Promise.all([
+        this.prisma.assignment.count({ where: { ...whereClause, is_published: true } }),
+        this.prisma.assignment.count({ where: { ...whereClause, is_published: false } }),
+        this.prisma.assignmentSubmission.count({
+          where: {
+            assignment: whereClause,
+            status: { in: ['SUBMITTED', 'GRADED'] }
+          }
+        }),
+      ]);
+
+      return {
+        success: true,
+        message: 'Assignment dashboard data retrieved successfully',
+        data: {
+          assignments_with_submissions: assignmentsWithStats,
+          published_assignments: publishedAssignmentsWithStats,
+          unpublished_assignments: unpublishedAssignments,
+          total_published_assignments: totalPublishedAssignments,
+          total_unpublished_assignments: totalUnpublishedAssignments,
+          total_submissions: totalAssignmentSubmissions,
+          summary: {
+            total_assignments: totalPublishedAssignments + totalUnpublishedAssignments,
+            active_assignments: totalPublishedAssignments,
+            pending_publication: totalUnpublishedAssignments,
+            total_submissions: totalAssignmentSubmissions,
+          }
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching assignment dashboard data: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: 'Failed to fetch assignment dashboard data',
         error: error.message,
       };
     }

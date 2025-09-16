@@ -33,13 +33,13 @@ export class QuizService {
         where: {
           ...whereClause,
           is_published: true,
-          submissions: {
-            some: {
-              status: {
-                in: ['SUBMITTED', 'GRADED'],
-              },
-            },
-          },
+          // todo submissions: {
+          //   some: {
+          //     status: {
+          //       in: ['SUBMITTED', 'GRADED'],
+          //     },
+          //   },
+          // },
         },
         take: limit,
         select: {

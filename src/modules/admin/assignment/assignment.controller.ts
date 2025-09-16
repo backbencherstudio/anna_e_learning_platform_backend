@@ -14,6 +14,21 @@ export class AssignmentController {
     return this.assignmentService.create(createAssignmentDto);
   }
 
+  @Get('dashboard')
+  @HttpCode(HttpStatus.OK)
+  async getDashboard(
+    @Query('series_id') series_id?: string,
+    @Query('course_id') course_id?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.assignmentService.getDashboard({
+      series_id,
+      course_id,
+      limit: limitNum,
+    });
+  }
+
   @Get()
   @HttpCode(HttpStatus.OK)
   async findAll(
