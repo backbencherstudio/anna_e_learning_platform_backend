@@ -10,6 +10,7 @@ import { AssignmentModule } from './assignment/assignment.module';
 import { LanguageModule } from './language/language.module';
 import { SeriesModule } from './series/series.module';
 import { MaterialsModule } from './materials/materials.module';
+import { TeacherSectionModule } from './teacher-section/teacher-section.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { MaterialsModule } from './materials/materials.module';
     LanguageModule,
     SeriesModule,
     MaterialsModule,
+    TeacherSectionModule,
   ],
 })
 export class AdminModule { }

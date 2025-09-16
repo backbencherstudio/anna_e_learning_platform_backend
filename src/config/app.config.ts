@@ -84,6 +84,7 @@ export default () => ({
     series_file: '/series/file/',
     course_file: '/course/file/',
     materials_file: '/materials/file/',
+    teacher_section_file: '/teacher-section/file/',
   },
 
   defaultUser: {
