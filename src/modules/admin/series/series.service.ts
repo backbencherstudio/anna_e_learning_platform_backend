@@ -8,6 +8,7 @@ import { Series } from '@prisma/client';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
 import { ChunkedUploadService } from '../../../common/lib/upload/ChunkedUploadService';
+import { VideoDurationService } from '../../../common/lib/video-duration/video-duration.service';
 
 @Injectable()
 export class SeriesService {
@@ -15,7 +16,8 @@ export class SeriesService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly chunkedUploadService: ChunkedUploadService
+    private readonly chunkedUploadService: ChunkedUploadService,
+    private readonly videoDurationService: VideoDurationService
   ) { }
 
   /**
@@ -29,11 +31,6 @@ export class SeriesService {
       introVideo?: Express.Multer.File;
       endVideo?: Express.Multer.File;
       lessonFiles?: Express.Multer.File[];
-      // chunkedUploads?: {
-      //   uploadId: string;
-      //   fileName: string;
-      //   lessonTitle?: string;
-      // }[];
     }[]
   ): Promise<SeriesResponse<Series>> {
 
@@ -75,6 +72,7 @@ export class SeriesService {
             summary: createSeriesDto.summary,
             description: createSeriesDto.description,
             visibility: createSeriesDto.visibility || 'DRAFT',
+            video_length: createSeriesDto.video_length,
             duration: createSeriesDto.duration,
             start_date: createSeriesDto.start_date ? new Date(createSeriesDto.start_date) : undefined,
             end_date: createSeriesDto.end_date ? new Date(createSeriesDto.end_date) : undefined,
@@ -122,6 +120,7 @@ export class SeriesService {
             });
 
             // Handle regular lesson files for this specific course
+            const lessonLengths: string[] = [];
             if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
               this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
               for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
@@ -131,72 +130,64 @@ export class SeriesService {
                 const fileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, lessonFile.originalname);
                 await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
 
+                // Calculate video length if it's a video file
+                let videoLength: string | null = null;
+                const fileKind = this.getFileKind(lessonFile.mimetype);
+
+                if (fileKind === 'video' && this.videoDurationService.isVideoFile(lessonFile.mimetype)) {
+                  try {
+                    videoLength = await this.videoDurationService.calculateVideoLength(lessonFile.buffer, lessonFile.originalname);
+                    this.logger.log(`Calculated video length for ${fileName}: ${videoLength}`);
+                    if (videoLength) {
+                      lessonLengths.push(videoLength);
+                    }
+                  } catch (error) {
+                    this.logger.warn(`Failed to calculate video length for ${fileName}: ${error.message}`);
+                  }
+                }
+
                 await prisma.lessonFile.create({
                   data: {
                     course_id: course.id,
                     title: lessonFileDto?.title || lessonFile.originalname,
                     url: fileName,
-                    kind: this.getFileKind(lessonFile.mimetype),
+                    kind: fileKind,
                     alt: lessonFile.originalname,
                     position: j,
+                    video_length: videoLength,
                   },
                 });
               }
               this.logger.log(`Created ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
             }
 
-            // Handle chunked uploads for this specific course
-            // if (courseFileData?.chunkedUploads && courseFileData.chunkedUploads.length > 0) {
-            //   this.logger.log(`Processing ${courseFileData.chunkedUploads.length} chunked uploads for course ${i}`);
-            //   for (let j = 0; j < courseFileData.chunkedUploads.length; j++) {
-            //     const chunkedUpload = courseFileData.chunkedUploads[j];
-
-            //     // Finalize the chunked upload
-            //     const uploadResult = await this.chunkedUploadService.finalizeUpload({
-            //       uploadId: chunkedUpload.uploadId,
-            //       finalFileName: chunkedUpload.fileName
-            //     });
-
-            //     if (uploadResult.success) {
-            //       const lessonTitle = chunkedUpload.lessonTitle || chunkedUpload.fileName.split('.')[0];
-            //       const finalFileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, chunkedUpload.fileName);
-
-            //       // Rename the file to the final name if needed
-            //       if (uploadResult.fileName !== finalFileName) {
-            //         const oldKey = appConfig().storageUrl.lesson_file + uploadResult.fileName;
-            //         const newKey = appConfig().storageUrl.lesson_file + finalFileName;
-
-            //         // Move the file to the new name
-            //         const fileExists = await SojebStorage.isExists(oldKey);
-            //         if (fileExists) {
-            //           const fileData = await SojebStorage.get(oldKey);
-            //           await SojebStorage.put(newKey, fileData);
-            //           await SojebStorage.delete(oldKey);
-            //         }
-            //       }
-
-            //       // Create lesson file record
-            //       await prisma.lessonFile.create({
-            //         data: {
-            //           course_id: course.id,
-            //           title: lessonTitle,
-            //           url: finalFileName,
-            //           kind: this.getFileKindFromFileName(chunkedUpload.fileName),
-            //           alt: chunkedUpload.fileName,
-            //           position: j + (courseFileData.lessonFiles?.length || 0), // Offset by regular files
-            //         },
-            //       });
-
-            //       this.logger.log(`Created chunked upload lesson file: ${finalFileName}`);
-            //     } else {
-            //       this.logger.error(`Failed to finalize chunked upload: ${chunkedUpload.uploadId}`);
-            //       throw new BadRequestException(`Failed to finalize chunked upload: ${uploadResult.message}`);
-            //     }
-            //   }
-            //   this.logger.log(`Created ${courseFileData.chunkedUploads.length} chunked upload lesson files for course ${i}`);
-            // }
+            // Calculate and update course video length
+            if (lessonLengths.length > 0) {
+              const courseLength = this.videoDurationService.calculateTotalLength(lessonLengths);
+              await prisma.course.update({
+                where: { id: course.id },
+                data: { video_length: courseLength },
+              });
+              this.logger.log(`Updated course video length: ${courseLength}`);
+            }
           }
           this.logger.log(`Created ${createSeriesDto.courses.length} courses for series`);
+
+          // Calculate and update series video length
+          const courses = await prisma.course.findMany({
+            where: { series_id: series.id },
+            select: { video_length: true },
+          });
+
+          const courseLengths = courses.map(course => course.video_length);
+          if (courseLengths.some(length => length)) {
+            const seriesLength = this.videoDurationService.calculateTotalLength(courseLengths);
+            await prisma.series.update({
+              where: { id: series.id },
+              data: { video_length: seriesLength },
+            });
+            this.logger.log(`Updated series video length: ${seriesLength}`);
+          }
         }
 
         return series;
@@ -262,6 +253,7 @@ export class SeriesService {
             summary: true,
             description: true,
             visibility: true,
+            video_length: true,
             duration: true,
             start_date: true,
             end_date: true,
@@ -285,6 +277,7 @@ export class SeriesService {
                 title: true,
                 position: true,
                 price: true,
+                video_length: true,
                 created_at: true,
                 updated_at: true,
                 intro_video_url: true,
@@ -296,6 +289,7 @@ export class SeriesService {
                     url: true,
                     kind: true,
                     alt: true,
+                    video_length: true,
                   },
                   orderBy: { position: 'asc' },
                 },
@@ -599,6 +593,7 @@ export class SeriesService {
                 select: {
                   id: true,
                   url: true,
+                  video_length: true,
                 },
               },
             },
