@@ -31,20 +31,45 @@ export class VideoDurationService {
      */
     async calculateVideoLength(fileBuffer: Buffer, originalName: string): Promise<string | null> {
         try {
+            this.logger.log(`Starting video length calculation for: ${originalName}, Buffer size: ${fileBuffer.length}`);
+
+            // Validate buffer
+            if (!fileBuffer || fileBuffer.length === 0) {
+                this.logger.warn(`Empty or invalid buffer for file: ${originalName}`);
+                return null;
+            }
+
             // Create a temporary file
             const tempDir = os.tmpdir();
             const tempFileName = `temp_video_${Date.now()}_${Math.random().toString(36).substring(7)}${path.extname(originalName)}`;
             const tempFilePath = path.join(tempDir, tempFileName);
 
+            this.logger.log(`Creating temporary file: ${tempFilePath}`);
+
             // Write buffer to temporary file
             fs.writeFileSync(tempFilePath, fileBuffer);
+            this.logger.log(`Temporary file created successfully, size: ${fs.statSync(tempFilePath).size} bytes`);
 
             try {
                 // Get video length using ffprobe
+                this.logger.log(`Calling ffprobe for: ${tempFilePath}`);
                 const length = await this.getVideoLengthFromFile(tempFilePath);
+                this.logger.log(`FFprobe returned length: ${length}`);
 
-                if (length !== null) {
-                    return this.formatDuration(length);
+                if (length !== null && length > 0) {
+                    const formattedLength = this.formatDuration(length);
+                    this.logger.log(`Formatted length: ${formattedLength}`);
+                    return formattedLength;
+                }
+
+                this.logger.warn(`FFprobe returned invalid length (${length}) for: ${originalName}`);
+
+                // Try alternative method - estimate based on file size (very rough estimate)
+                const fileSize = fs.statSync(tempFilePath).size;
+                const estimatedLength = this.estimateVideoLengthFromSize(fileSize, originalName);
+                if (estimatedLength) {
+                    this.logger.log(`Using estimated length: ${estimatedLength}`);
+                    return estimatedLength;
                 }
 
                 return null;
@@ -52,6 +77,7 @@ export class VideoDurationService {
                 // Clean up temporary file
                 try {
                     fs.unlinkSync(tempFilePath);
+                    this.logger.log(`Temporary file deleted: ${tempFilePath}`);
                 } catch (error) {
                     this.logger.warn(`Failed to delete temporary file: ${tempFilePath}`, error);
                 }
@@ -69,23 +95,31 @@ export class VideoDurationService {
      */
     private async getVideoLengthFromFile(filePath: string): Promise<number | null> {
         return new Promise((resolve, reject) => {
+            this.logger.log(`FFprobe starting for file: ${filePath}`);
+
             ffmpeg.ffprobe(filePath, (err, metadata) => {
                 if (err) {
-                    this.logger.error(`FFprobe error: ${err.message}`);
+                    this.logger.error(`FFprobe error: ${err.message}`, err.stack);
                     resolve(null);
                     return;
                 }
 
                 try {
+                    this.logger.log(`FFprobe metadata received:`, JSON.stringify(metadata.format, null, 2));
+
                     const length = metadata.format.duration;
+                    this.logger.log(`Raw duration from metadata: ${length}`);
+
                     if (length && !isNaN(length)) {
-                        resolve(Math.floor(length));
+                        const roundedLength = Math.floor(length);
+                        this.logger.log(`Rounded duration: ${roundedLength} seconds`);
+                        resolve(roundedLength);
                     } else {
-                        this.logger.warn('Invalid length from metadata');
+                        this.logger.warn(`Invalid length from metadata: ${length}`);
                         resolve(null);
                     }
                 } catch (error) {
-                    this.logger.error(`Error parsing length: ${error.message}`);
+                    this.logger.error(`Error parsing length: ${error.message}`, error.stack);
                     resolve(null);
                 }
             });
@@ -177,5 +211,50 @@ export class VideoDurationService {
         }, 0);
 
         return this.formatDuration(totalSeconds);
+    }
+
+    /**
+     * Estimate video length based on file size (very rough estimate)
+     * @param fileSize - File size in bytes
+     * @param fileName - Original file name
+     * @returns string | null - Estimated length or null
+     */
+    private estimateVideoLengthFromSize(fileSize: number, fileName: string): string | null {
+        try {
+            // Very rough estimation based on typical video bitrates
+            // This is just a fallback when FFprobe fails
+            const ext = path.extname(fileName).toLowerCase();
+
+            // Different formats have different typical bitrates
+            let estimatedBitrate = 1000000; // 1 Mbps default
+
+            switch (ext) {
+                case '.mp4':
+                    estimatedBitrate = 2000000; // 2 Mbps
+                    break;
+                case '.webm':
+                    estimatedBitrate = 1500000; // 1.5 Mbps
+                    break;
+                case '.avi':
+                    estimatedBitrate = 3000000; // 3 Mbps
+                    break;
+                case '.mov':
+                    estimatedBitrate = 2500000; // 2.5 Mbps
+                    break;
+            }
+
+            // Calculate estimated duration: fileSize (bytes) / bitrate (bits per second) * 8 (bits per byte)
+            const estimatedSeconds = Math.floor((fileSize * 8) / estimatedBitrate);
+
+            if (estimatedSeconds > 0 && estimatedSeconds < 36000) { // Less than 10 hours
+                this.logger.log(`Estimated video length: ${estimatedSeconds} seconds for ${fileName} (${fileSize} bytes)`);
+                return this.formatDuration(estimatedSeconds);
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error(`Error estimating video length: ${error.message}`);
+            return null;
+        }
     }
 }

@@ -84,7 +84,9 @@ export class SeriesService {
                                                 url: true,
                                                 kind: true,
                                                 alt: true,
+                                                position: true,
                                                 video_length: true,
+                                                is_locked: true,
                                             },
                                             orderBy: { position: 'asc' },
                                         },
@@ -140,7 +142,7 @@ export class SeriesService {
             const hasNextPage = page < totalPages;
             const hasPreviousPage = page > 1;
 
-            // Add file URLs to all series
+            // Add file URLs and lesson progress to all series
             for (const seriesItem of series) {
                 if (seriesItem.thumbnail) {
                     seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
@@ -148,10 +150,18 @@ export class SeriesService {
                 if (seriesItem.courses && seriesItem.courses.length > 0) {
                     for (const course of seriesItem.courses) {
                         if (course.lesson_files && course.lesson_files.length > 0) {
+                            // Get lesson progress for this user and course
+                            const lessonProgress = await this.getLessonProgressForCourse(userId, course.id);
+
                             for (const lessonFile of course.lesson_files) {
                                 if (lessonFile.url) {
                                     lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
                                 }
+
+                                // Check if lesson is unlocked for this user
+                                const progress = lessonProgress.find(p => p.lesson_id === lessonFile.id);
+                                lessonFile['is_unlocked'] = await this.isLessonUnlocked(userId, lessonFile.id, course.lesson_files, lessonProgress);
+                                lessonFile['progress'] = progress || null;
                             }
                         }
                         if (course.intro_video_url) {
@@ -185,6 +195,301 @@ export class SeriesService {
             return {
                 success: false,
                 message: 'Failed to fetch enrolled series',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Get lesson progress for a specific course
+     */
+    async getLessonProgressForCourse(userId: string, courseId: string) {
+        try {
+            const progress = await this.prisma.lessonProgress.findMany({
+                where: {
+                    user_id: userId,
+                    course_id: courseId,
+                    deleted_at: null,
+                },
+                select: {
+                    id: true,
+                    lesson_id: true,
+                    is_completed: true,
+                    is_viewed: true,
+                    completed_at: true,
+                    viewed_at: true,
+                    time_spent: true,
+                    last_position: true,
+                    completion_percentage: true,
+                },
+            });
+            return progress;
+        } catch (error) {
+            this.logger.error(`Error fetching lesson progress: ${error.message}`);
+            return [];
+        }
+    }
+
+    /**
+     * Check if a lesson is unlocked for a user
+     */
+    async isLessonUnlocked(userId: string, lessonId: string, allLessons: any[], userProgress: any[]): Promise<boolean> {
+        try {
+            // Find the current lesson
+            const currentLesson = allLessons.find(lesson => lesson.id === lessonId);
+            if (!currentLesson) return false;
+
+            // First lesson is always unlocked
+            if (currentLesson.position === 0) return true;
+
+            // Find the previous lesson
+            const previousLesson = allLessons.find(lesson => lesson.position === currentLesson.position - 1);
+            if (!previousLesson) return true;
+
+            // Check if previous lesson is completed
+            const previousProgress = userProgress.find(p => p.lesson_id === previousLesson.id);
+            return previousProgress ? previousProgress.is_completed : false;
+        } catch (error) {
+            this.logger.error(`Error checking lesson unlock status: ${error.message}`);
+            return false;
+        }
+    }
+
+    /**
+     * Mark lesson as viewed
+     */
+    async markLessonAsViewed(userId: string, lessonId: string): Promise<SeriesResponse<any>> {
+        try {
+            this.logger.log(`Marking lesson ${lessonId} as viewed for user ${userId}`);
+
+            // Get lesson details to find course and series
+            const lesson = await this.prisma.lessonFile.findFirst({
+                where: { id: lessonId, deleted_at: null },
+                include: {
+                    course: {
+                        select: {
+                            id: true,
+                            series_id: true,
+                        },
+                    },
+                },
+            });
+
+            if (!lesson || !lesson.course) {
+                return {
+                    success: false,
+                    message: 'Lesson not found',
+                };
+            }
+
+            // Upsert lesson progress
+            const progress = await this.prisma.lessonProgress.upsert({
+                where: {
+                    user_id_lesson_id: {
+                        user_id: userId,
+                        lesson_id: lessonId,
+                    },
+                },
+                update: {
+                    is_viewed: true,
+                    viewed_at: new Date(),
+                    updated_at: new Date(),
+                },
+                create: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                    course_id: lesson.course.id,
+                    series_id: lesson.course.series_id,
+                    is_viewed: true,
+                    viewed_at: new Date(),
+                },
+            });
+
+            return {
+                success: true,
+                message: 'Lesson marked as viewed',
+                data: progress,
+            };
+        } catch (error) {
+            this.logger.error(`Error marking lesson as viewed: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to mark lesson as viewed',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Mark lesson as completed
+     */
+    async markLessonAsCompleted(userId: string, lessonId: string, completionData?: {
+        time_spent?: number;
+        last_position?: number;
+        completion_percentage?: number;
+    }): Promise<SeriesResponse<any>> {
+        try {
+            this.logger.log(`Marking lesson ${lessonId} as completed for user ${userId}`);
+
+            // Get lesson details to find course and series
+            const lesson = await this.prisma.lessonFile.findFirst({
+                where: { id: lessonId, deleted_at: null },
+                include: {
+                    course: {
+                        select: {
+                            id: true,
+                            series_id: true,
+                        },
+                    },
+                },
+            });
+
+            if (!lesson || !lesson.course) {
+                return {
+                    success: false,
+                    message: 'Lesson not found',
+                };
+            }
+
+            // Upsert lesson progress
+            const progress = await this.prisma.lessonProgress.upsert({
+                where: {
+                    user_id_lesson_id: {
+                        user_id: userId,
+                        lesson_id: lessonId,
+                    },
+                },
+                update: {
+                    is_completed: true,
+                    is_viewed: true,
+                    completed_at: new Date(),
+                    viewed_at: new Date(),
+                    time_spent: completionData?.time_spent,
+                    last_position: completionData?.last_position,
+                    completion_percentage: completionData?.completion_percentage || 100,
+                    updated_at: new Date(),
+                },
+                create: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                    course_id: lesson.course.id,
+                    series_id: lesson.course.series_id,
+                    is_completed: true,
+                    is_viewed: true,
+                    completed_at: new Date(),
+                    viewed_at: new Date(),
+                    time_spent: completionData?.time_spent,
+                    last_position: completionData?.last_position,
+                    completion_percentage: completionData?.completion_percentage || 100,
+                },
+            });
+
+            // Unlock next lesson if it exists
+            await this.unlockNextLesson(userId, lessonId, lesson.course.id);
+
+            return {
+                success: true,
+                message: 'Lesson marked as completed',
+                data: progress,
+            };
+        } catch (error) {
+            this.logger.error(`Error marking lesson as completed: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to mark lesson as completed',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Unlock next lesson after completing current one
+     */
+    async unlockNextLesson(userId: string, completedLessonId: string, courseId: string): Promise<void> {
+        try {
+            // Get current lesson position
+            const currentLesson = await this.prisma.lessonFile.findFirst({
+                where: { id: completedLessonId, deleted_at: null },
+                select: { position: true },
+            });
+
+            if (!currentLesson) return;
+
+            // Find next lesson
+            const nextLesson = await this.prisma.lessonFile.findFirst({
+                where: {
+                    course_id: courseId,
+                    position: currentLesson.position + 1,
+                    deleted_at: null,
+                },
+                select: { id: true },
+            });
+
+            if (nextLesson) {
+                // Create progress record for next lesson (unlocked but not completed)
+                await this.prisma.lessonProgress.upsert({
+                    where: {
+                        user_id_lesson_id: {
+                            user_id: userId,
+                            lesson_id: nextLesson.id,
+                        },
+                    },
+                    update: {
+                        // Keep existing progress
+                    },
+                    create: {
+                        user_id: userId,
+                        lesson_id: nextLesson.id,
+                        course_id: courseId,
+                        series_id: (await this.prisma.course.findUnique({
+                            where: { id: courseId },
+                            select: { series_id: true },
+                        }))?.series_id || '',
+                        is_completed: false,
+                        is_viewed: false,
+                    },
+                });
+
+                this.logger.log(`Unlocked next lesson ${nextLesson.id} for user ${userId}`);
+            }
+        } catch (error) {
+            this.logger.error(`Error unlocking next lesson: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get lesson progress for a specific lesson
+     */
+    async getLessonProgress(userId: string, lessonId: string): Promise<SeriesResponse<any>> {
+        try {
+            const progress = await this.prisma.lessonProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                    deleted_at: null,
+                },
+                include: {
+                    lesson: {
+                        select: {
+                            id: true,
+                            title: true,
+                            position: true,
+                            is_locked: true,
+                        },
+                    },
+                },
+            });
+
+            return {
+                success: true,
+                message: 'Lesson progress retrieved successfully',
+                data: progress,
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching lesson progress: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to fetch lesson progress',
                 error: error.message,
             };
         }

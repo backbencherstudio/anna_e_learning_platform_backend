@@ -4,6 +4,7 @@ import { SeriesService } from './series.service';
 import { CreateSeriesDto } from './dto/create-series.dto';
 import { UpdateSeriesDto } from './dto/update-series.dto';
 import { ChunkedUploadService } from '../../../common/lib/upload/ChunkedUploadService';
+import { multerConfig } from '../../../config/multer.config';
 
 
 @Controller('admin/series')
@@ -52,7 +53,7 @@ export class SeriesController {
       { name: 'course_9_introVideo', maxCount: 1 },
       { name: 'course_9_endVideo', maxCount: 1 },
       { name: 'course_9_lessonFiles', maxCount: 50 },
-    ])
+    ], multerConfig)
   )
   async create(
     @Body() createSeriesDto: CreateSeriesDto,

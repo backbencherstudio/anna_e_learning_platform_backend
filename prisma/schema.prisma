@@ -105,6 +105,7 @@ model User {
   graded_submissions     AssignmentSubmission[] @relation("SubmissionGrader")
   enrollments            Enrollment[]
   user_progress          UserProgress[]
+  lesson_progress        LessonProgress[]
   certificates           Certificate[]
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
 
@@ -510,6 +511,7 @@ model Series {
   certificates    Certificate[]
   materials_files MaterialsFile[]
   student_files   StudentFile[]
+  lesson_progress LessonProgress[]
 
   @@map("series")
 }
@@ -535,6 +537,7 @@ model Course {
   assignments     Assignment[]
   materials_files MaterialsFile[]
   student_files   StudentFile[]
+  lesson_progress LessonProgress[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -552,9 +555,13 @@ model LessonFile {
   alt          String?
   position     Int     @default(0)
   video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
+  is_locked    Boolean @default(true) // Whether this lesson is locked by default
 
   course_id String?
   course    Course? @relation(fields: [course_id], references: [id])
+
+  // Relations
+  user_progress LessonProgress[]
 
   @@index([course_id])
   @@map("lesson_files")
@@ -907,6 +914,38 @@ model UserProgress {
 
   @@unique([user_id, series_id])
   @@map("user_progress")
+}
+
+model LessonProgress {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  user_id   String
+  lesson_id String
+  course_id String
+  series_id String
+
+  // Progress tracking
+  is_completed          Boolean   @default(false)
+  is_viewed             Boolean   @default(false)
+  completed_at          DateTime?
+  viewed_at             DateTime?
+  time_spent            Int? // Time spent in seconds
+  last_position         Int? // Video/audio position
+  completion_percentage Float?    @default(0) // 0-100
+
+  // Relations
+  user   User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson LessonFile @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  course Course     @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  series Series     @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+  @@index([user_id, course_id])
+  @@index([user_id, series_id])
+  @@map("lesson_progress")
 }
 
 // ===== CERTIFICATES =====

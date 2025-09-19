@@ -135,15 +135,20 @@ export class SeriesService {
                 const fileKind = this.getFileKind(lessonFile.mimetype);
 
                 if (fileKind === 'video' && this.videoDurationService.isVideoFile(lessonFile.mimetype)) {
+                  this.logger.log(`Processing video file: ${fileName}, MIME type: ${lessonFile.mimetype}, Buffer size: ${lessonFile.buffer.length}`);
                   try {
                     videoLength = await this.videoDurationService.calculateVideoLength(lessonFile.buffer, lessonFile.originalname);
                     this.logger.log(`Calculated video length for ${fileName}: ${videoLength}`);
                     if (videoLength) {
                       lessonLengths.push(videoLength);
+                    } else {
+                      this.logger.warn(`Video length calculation returned null for ${fileName}`);
                     }
                   } catch (error) {
-                    this.logger.warn(`Failed to calculate video length for ${fileName}: ${error.message}`);
+                    this.logger.error(`Failed to calculate video length for ${fileName}: ${error.message}`, error.stack);
                   }
+                } else {
+                  this.logger.log(`Skipping non-video file: ${fileName}, MIME type: ${lessonFile.mimetype}, File kind: ${fileKind}`);
                 }
 
                 await prisma.lessonFile.create({
