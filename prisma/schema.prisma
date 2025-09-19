@@ -500,8 +500,8 @@ model Series {
   note           String?
   available_site Int?      @default(0) // "all", "web", "mobile", "app"
 
-  language_id String
-  language    Language @relation(fields: [language_id], references: [id])
+  language_id String?
+  language    Language? @relation(fields: [language_id], references: [id])
 
   courses         Course[]
   quizzes         Quiz[]
@@ -532,7 +532,7 @@ model Course {
   end_video_url   String?
   video_length    String?
 
-  lesson_files    LessonFile[]
+  lessons         Lesson[]
   quizzes         Quiz[]
   assignments     Assignment[]
   materials_files MaterialsFile[]
@@ -543,13 +543,34 @@ model Course {
   @@map("courses")
 }
 
-model LessonFile {
+model Lesson {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title        String?
+  title       String?
+  description String?
+
+  course_id String?
+  course    Course? @relation(fields: [course_id], references: [id])
+
+  media_asset_id String?
+  media_asset    LessonMedia? @relation(fields: [media_asset_id], references: [id])
+
+  // Relations
+  user_progress LessonProgress[]
+
+  @@index([course_id])
+  @@map("lessons")
+}
+
+model LessonMedia {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
   url          String
   kind         String  @default("video") // "image","video","pdf","slides"
   alt          String?
@@ -557,14 +578,9 @@ model LessonFile {
   video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
   is_locked    Boolean @default(true) // Whether this lesson is locked by default
 
-  course_id String?
-  course    Course? @relation(fields: [course_id], references: [id])
+  lessons Lesson[]
 
-  // Relations
-  user_progress LessonProgress[]
-
-  @@index([course_id])
-  @@map("lesson_files")
+  @@map("lesson_media")
 }
 
 model MaterialsFile {
@@ -937,10 +953,10 @@ model LessonProgress {
   completion_percentage Float?    @default(0) // 0-100
 
   // Relations
-  user   User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  lesson LessonFile @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
-  course Course     @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  series Series     @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  series Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
   @@unique([user_id, lesson_id])
   @@index([user_id, course_id])

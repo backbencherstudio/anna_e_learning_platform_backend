@@ -7,5 +7,6 @@ import { PrismaModule } from 'src/prisma/prisma.module';
   imports: [PrismaModule],
   controllers: [SeriesController],
   providers: [SeriesService],
+  exports: [SeriesService],
 })
 export class SeriesModule { }

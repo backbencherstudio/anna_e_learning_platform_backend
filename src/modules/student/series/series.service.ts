@@ -239,12 +239,12 @@ export class SeriesService {
             const currentLesson = allLessons.find(lesson => lesson.id === lessonId);
             if (!currentLesson) return false;
 
-            // First lesson is always unlocked
+            // First lesson of the first course is always unlocked
             if (currentLesson.position === 0) return true;
 
             // Find the previous lesson
             const previousLesson = allLessons.find(lesson => lesson.position === currentLesson.position - 1);
-            if (!previousLesson) return true;
+            if (!previousLesson) return false; // Changed from true to false - if no previous lesson, it's locked
 
             // Check if previous lesson is completed
             const previousProgress = userProgress.find(p => p.lesson_id === previousLesson.id);
@@ -415,7 +415,7 @@ export class SeriesService {
 
             if (!currentLesson) return;
 
-            // Find next lesson
+            // Find next lesson in the same course
             const nextLesson = await this.prisma.lessonFile.findFirst({
                 where: {
                     course_id: courseId,
@@ -426,7 +426,8 @@ export class SeriesService {
             });
 
             if (nextLesson) {
-                // Create progress record for next lesson (unlocked but not completed)
+                // Only create a progress record for the immediate next lesson
+                // This makes it "unlocked" but not completed
                 await this.prisma.lessonProgress.upsert({
                     where: {
                         user_id_lesson_id: {
@@ -435,7 +436,7 @@ export class SeriesService {
                         },
                     },
                     update: {
-                        // Keep existing progress
+                        // Keep existing progress - don't overwrite if already exists
                     },
                     create: {
                         user_id: userId,
@@ -451,6 +452,61 @@ export class SeriesService {
                 });
 
                 this.logger.log(`Unlocked next lesson ${nextLesson.id} for user ${userId}`);
+            } else {
+                // If no next lesson in current course, check if there's a next course
+                const currentCourse = await this.prisma.course.findFirst({
+                    where: { id: courseId, deleted_at: null },
+                    select: { position: true, series_id: true },
+                });
+
+                if (currentCourse) {
+                    // Find next course in the series
+                    const nextCourse = await this.prisma.course.findFirst({
+                        where: {
+                            series_id: currentCourse.series_id,
+                            position: currentCourse.position + 1,
+                            deleted_at: null,
+                        },
+                        select: { id: true },
+                    });
+
+                    if (nextCourse) {
+                        // Find first lesson of next course
+                        const firstLessonOfNextCourse = await this.prisma.lessonFile.findFirst({
+                            where: {
+                                course_id: nextCourse.id,
+                                position: 0,
+                                deleted_at: null,
+                            },
+                            select: { id: true },
+                        });
+
+                        if (firstLessonOfNextCourse) {
+                            // Unlock first lesson of next course
+                            await this.prisma.lessonProgress.upsert({
+                                where: {
+                                    user_id_lesson_id: {
+                                        user_id: userId,
+                                        lesson_id: firstLessonOfNextCourse.id,
+                                    },
+                                },
+                                update: {
+                                    // Keep existing progress
+                                },
+                                create: {
+                                    user_id: userId,
+                                    lesson_id: firstLessonOfNextCourse.id,
+                                    course_id: nextCourse.id,
+                                    series_id: currentCourse.series_id,
+                                    is_completed: false,
+                                    is_viewed: false,
+                                },
+                            });
+
+                            this.logger.log(`Unlocked first lesson ${firstLessonOfNextCourse.id} of next course ${nextCourse.id} for user ${userId}`);
+                        }
+                    }
+                }
             }
         } catch (error) {
             this.logger.error(`Error unlocking next lesson: ${error.message}`);
@@ -492,6 +548,71 @@ export class SeriesService {
                 message: 'Failed to fetch lesson progress',
                 error: error.message,
             };
+        }
+    }
+
+    /**
+     * Ensure first lesson of first course is unlocked for a user
+     * This should be called when a user enrolls in a series
+     */
+    async unlockFirstLessonForUser(userId: string, seriesId: string): Promise<void> {
+        try {
+            this.logger.log(`Unlocking first lesson for user ${userId} in series ${seriesId}`);
+
+            // Find the first course in the series
+            const firstCourse = await this.prisma.course.findFirst({
+                where: {
+                    series_id: seriesId,
+                    deleted_at: null,
+                },
+                orderBy: { position: 'asc' },
+                select: { id: true },
+            });
+
+            if (!firstCourse) {
+                this.logger.warn(`No courses found for series ${seriesId}`);
+                return;
+            }
+
+            // Find the first lesson in the first course
+            const firstLesson = await this.prisma.lessonFile.findFirst({
+                where: {
+                    course_id: firstCourse.id,
+                    position: 0,
+                    deleted_at: null,
+                },
+                select: { id: true },
+            });
+
+            if (!firstLesson) {
+                this.logger.warn(`No lessons found for first course ${firstCourse.id}`);
+                return;
+            }
+
+            // Create progress record for first lesson (unlocked but not completed)
+            await this.prisma.lessonProgress.upsert({
+                where: {
+                    user_id_lesson_id: {
+                        user_id: userId,
+                        lesson_id: firstLesson.id,
+                    },
+                },
+                update: {
+                    // Keep existing progress
+                },
+                create: {
+                    user_id: userId,
+                    lesson_id: firstLesson.id,
+                    course_id: firstCourse.id,
+                    series_id: seriesId,
+                    is_completed: false,
+                    is_viewed: false,
+                },
+            });
+
+            this.logger.log(`Unlocked first lesson ${firstLesson.id} for user ${userId}`);
+        } catch (error) {
+            this.logger.error(`Error unlocking first lesson: ${error.message}`);
         }
     }
 }

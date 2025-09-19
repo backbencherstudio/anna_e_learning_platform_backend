@@ -29,7 +29,7 @@ async function bootstrap() {
 
   // Configure CORS to handle preflight requests properly
   app.enableCors({
-    origin: 'http://localhost:3000',
+    origin: '*',
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Origin',

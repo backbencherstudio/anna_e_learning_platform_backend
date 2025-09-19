@@ -3,10 +3,14 @@ import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { StripePayment } from '../../../common/lib/Payment/stripe/StripePayment';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
+import { SeriesService } from '../series/series.service';
 
 @Injectable()
 export class EnrollmentService {
-    constructor(private readonly prisma: PrismaService) { }
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly seriesService: SeriesService
+    ) { }
 
     async create(body: CreateEnrollmentDto, userId: string) {
         const { series_id, amount, currency = 'usd' } = body;
@@ -118,6 +122,9 @@ export class EnrollmentService {
                 payment_status: 'completed',
             },
         });
+
+        // Unlock the first lesson for the user
+        await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
     }
 
     /**
