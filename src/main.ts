@@ -17,8 +17,13 @@ async function bootstrap() {
     bodyParser: true,
   });
 
-  // Handle raw body for webhooks
-  // app.use('/payment/stripe/webhook', express.raw({ type: 'application/json' }));
+  // Handle raw body for webhooks - must be before any other middleware
+  app.use('/api/payment/stripe/webhook', require('express').raw({
+    type: 'application/json',
+    verify: (req, res, buf, encoding) => {
+      req.rawBody = buf;
+    }
+  }));
 
   app.setGlobalPrefix('api');
 

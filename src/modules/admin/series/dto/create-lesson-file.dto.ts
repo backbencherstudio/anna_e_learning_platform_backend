@@ -14,10 +14,14 @@ export class CreateLessonFileDto {
     @IsString()
     @MaxLength(200)
     title?: string;
-    
+
     @IsString()
     @IsNotEmpty()
     url!: string;
+
+    @IsString()
+    @IsOptional()
+    doc?: string;
 
     @IsOptional()
     @IsEnum(LessonFileKind)

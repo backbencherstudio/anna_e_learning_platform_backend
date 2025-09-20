@@ -550,7 +550,8 @@ model LessonFile {
   deleted_at DateTime?
 
   title        String?
-  url          String
+  url          String?
+  doc          String?
   kind         String  @default("video") // "image","video","pdf","slides"
   alt          String?
   position     Int     @default(0)

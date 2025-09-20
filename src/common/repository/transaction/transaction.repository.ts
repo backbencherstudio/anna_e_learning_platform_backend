@@ -79,23 +79,20 @@ export class TransactionRepository {
       order_data['payment_raw_status'] = raw_status;
     }
 
-    const paymentTransaction = await prisma.paymentTransaction.findMany({
+    const paymentTransaction = await prisma.paymentTransaction.findFirst({
       where: {
         reference_number: reference_number,
       },
     });
 
-    // update booking status
-    // if (paymentTransaction.length > 0) {
-    //   await prisma.order.update({
-    //     where: {
-    //       id: paymentTransaction[0].order_id,
-    //     },
-    //     data: {
-    //       ...order_data,
-    //     },
-    //   });
-    // }
+    // Update enrollment status to active
+    await prisma.enrollment.update({
+      where: { id: paymentTransaction.enrollment_id },
+      data: {
+          status: 'ACTIVE',
+          payment_status: 'completed',
+      },
+  });
 
     return await prisma.paymentTransaction.updateMany({
       where: {

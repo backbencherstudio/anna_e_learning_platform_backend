@@ -80,6 +80,7 @@ export default () => ({
     series_thumbnail: '/series/thumbnail/',
     course_thumbnail: '/course/thumbnail/',
     lesson_file: '/lesson/file/',
+    doc_file: '/doc/file/',
     module_file: '/module/file/',
     series_file: '/series/file/',
     course_file: '/course/file/',

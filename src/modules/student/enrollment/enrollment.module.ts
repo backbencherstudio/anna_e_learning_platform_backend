@@ -7,5 +7,6 @@ import { SeriesModule } from '../series/series.module';
   imports: [SeriesModule],
   controllers: [EnrollmentController],
   providers: [EnrollmentService],
+  exports: [EnrollmentService], // Export the service so other modules can use it
 })
 export class EnrollmentModule { }

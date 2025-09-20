@@ -30,7 +30,8 @@ export class SeriesService {
       courseIndex: number;
       introVideo?: Express.Multer.File;
       endVideo?: Express.Multer.File;
-      lessonFiles?: Express.Multer.File[];
+      videoFiles?: Express.Multer.File[];
+      docFiles?: Express.Multer.File[];
     }[]
   ): Promise<SeriesResponse<Series>> {
 
@@ -119,51 +120,89 @@ export class SeriesService {
               },
             });
 
-            // Handle regular lesson files for this specific course
+            // Handle lesson files (combining video and document files)
             const lessonLengths: string[] = [];
-            if (courseFileData?.lessonFiles && courseFileData.lessonFiles.length > 0) {
-              this.logger.log(`Processing ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
-              for (let j = 0; j < courseFileData.lessonFiles.length; j++) {
-                const lessonFile = courseFileData.lessonFiles[j];
+            const maxFiles = Math.max(
+              courseFileData?.videoFiles?.length || 0,
+              courseFileData?.docFiles?.length || 0
+            );
+
+            if (maxFiles > 0) {
+              this.logger.log(`Processing ${maxFiles} lesson files for course ${i}`);
+
+              for (let j = 0; j < maxFiles; j++) {
+                const videoFile = courseFileData?.videoFiles?.[j];
+                const docFile = courseFileData?.docFiles?.[j];
                 const lessonFileDto = courseDto.lessons_files?.[j];
-                const lessonTitle = lessonFileDto?.title || lessonFile.originalname.split('.')[0];
-                const fileName = StringHelper.generateLessonFileName(j + 1, lessonTitle, lessonFile.originalname);
-                await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, lessonFile.buffer);
 
-                // Calculate video length if it's a video file
+                let videoFileName: string | undefined;
+                let docFileName: string | undefined;
                 let videoLength: string | null = null;
-                const fileKind = this.getFileKind(lessonFile.mimetype);
+                let primaryKind = 'other';
+                let title = `Lesson ${j + 1}`;
 
-                if (fileKind === 'video' && this.videoDurationService.isVideoFile(lessonFile.mimetype)) {
-                  this.logger.log(`Processing video file: ${fileName}, MIME type: ${lessonFile.mimetype}, Buffer size: ${lessonFile.buffer.length}`);
-                  try {
-                    videoLength = await this.videoDurationService.calculateVideoLength(lessonFile.buffer, lessonFile.originalname);
-                    this.logger.log(`Calculated video length for ${fileName}: ${videoLength}`);
-                    if (videoLength) {
-                      lessonLengths.push(videoLength);
-                    } else {
-                      this.logger.warn(`Video length calculation returned null for ${fileName}`);
+                // Process video file if exists
+                if (videoFile) {
+                  const videoTitle = lessonFileDto?.title || videoFile.originalname.split('.')[0];
+                  title = videoTitle;
+                  videoFileName = StringHelper.generateLessonFileName(j + 1, videoTitle, videoFile.originalname);
+                  await SojebStorage.put(appConfig().storageUrl.lesson_file + videoFileName, videoFile.buffer);
+
+                  const fileKind = this.getFileKind(videoFile.mimetype);
+                  primaryKind = fileKind;
+
+                  if (fileKind === 'video' && this.videoDurationService.isVideoFile(videoFile.mimetype)) {
+                    this.logger.log(`Processing video file: ${videoFileName}, MIME type: ${videoFile.mimetype}, Buffer size: ${videoFile.buffer.length}`);
+                    try {
+                      videoLength = await this.videoDurationService.calculateVideoLength(videoFile.buffer, videoFile.originalname);
+                      this.logger.log(`Calculated video length for ${videoFileName}: ${videoLength}`);
+                      if (videoLength) {
+                        lessonLengths.push(videoLength);
+                      } else {
+                        this.logger.warn(`Video length calculation returned null for ${videoFileName}`);
+                      }
+                    } catch (error) {
+                      this.logger.error(`Failed to calculate video length for ${videoFileName}: ${error.message}`, error.stack);
                     }
-                  } catch (error) {
-                    this.logger.error(`Failed to calculate video length for ${fileName}: ${error.message}`, error.stack);
+                  } else {
+                    this.logger.log(`Skipping non-video file: ${videoFileName}, MIME type: ${videoFile.mimetype}, File kind: ${fileKind}`);
                   }
-                } else {
-                  this.logger.log(`Skipping non-video file: ${fileName}, MIME type: ${lessonFile.mimetype}, File kind: ${fileKind}`);
                 }
 
+                // Process document file if exists
+                if (docFile) {
+                  const docTitle = lessonFileDto?.title || docFile.originalname.split('.')[0];
+                  if (!title || title === `Lesson ${j + 1}`) {
+                    title = docTitle;
+                  }
+                  docFileName = StringHelper.generateLessonFileName(j + 1, docTitle, docFile.originalname);
+                  await SojebStorage.put(appConfig().storageUrl.doc_file + docFileName, docFile.buffer);
+
+                  const docFileKind = this.getFileKind(docFile.mimetype);
+                  if (!videoFile) {
+                    primaryKind = docFileKind;
+                  }
+                  this.logger.log(`Processing document file: ${docFileName}, File kind: ${docFileKind}`);
+                }
+
+                // Create lesson file with both URL and doc if available
                 await prisma.lessonFile.create({
                   data: {
                     course_id: course.id,
-                    title: lessonFileDto?.title || lessonFile.originalname,
-                    url: fileName,
-                    kind: fileKind,
-                    alt: lessonFile.originalname,
+                    title: title,
+                    url: videoFileName || undefined,
+                    doc: docFileName || undefined,
+                    kind: primaryKind,
+                    alt: videoFile?.originalname || docFile?.originalname || `Lesson ${j + 1}`,
                     position: j,
                     video_length: videoLength,
                   },
                 });
+
+                this.logger.log(`Created lesson file ${j + 1}: video=${!!videoFileName}, doc=${!!docFileName}, kind=${primaryKind}`);
               }
-              this.logger.log(`Created ${courseFileData.lessonFiles.length} lesson files for course ${i}`);
+
+              this.logger.log(`Created ${maxFiles} lesson files for course ${i} (with combined video and document files)`);
             }
 
             // Calculate and update course video length
@@ -292,6 +331,7 @@ export class SeriesService {
                     id: true,
                     title: true,
                     url: true,
+                    doc: true,
                     kind: true,
                     alt: true,
                     video_length: true,
@@ -330,6 +370,9 @@ export class SeriesService {
               for (const lessonFile of course.lesson_files) {
                 if (lessonFile.url) {
                   lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                }
+                if (lessonFile.doc) {
+                  lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
                 }
               }
             }
@@ -438,6 +481,9 @@ export class SeriesService {
             for (const lessonFile of course.lesson_files) {
               if (lessonFile.url) {
                 lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+              }
+              if (lessonFile.doc) {
+                lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
               }
             }
           }

@@ -75,7 +75,7 @@ export class EnrollmentService {
                 status: 'pending',
             });
 
-            await this.prisma.enrollment.update({ where: { id: enrollment.id }, data: { payment_status: 'pending' } });
+            //  await this.prisma.enrollment.update({ where: { id: enrollment.id }, data: { payment_status: 'pending' } });
 
             await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
 
@@ -127,29 +127,4 @@ export class EnrollmentService {
         await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
     }
 
-    /**
-     * Handle failed payment (called by webhook)
-     */
-    async handlePaymentFailed(paymentIntentId: string) {
-        // Find enrollment by payment reference
-        const enrollment = await this.prisma.enrollment.findFirst({
-            where: {
-                payment_reference_number: paymentIntentId,
-            },
-        });
-
-        if (!enrollment) {
-            console.error('Enrollment not found for payment intent:', paymentIntentId);
-            return;
-        }
-
-        // Update subscription status to failed
-        await this.prisma.enrollment.update({
-            where: { id: enrollment.id },
-            data: {
-                status: 'CANCELLED',
-                payment_status: 'failed',
-            },
-        });
-    }
 }
