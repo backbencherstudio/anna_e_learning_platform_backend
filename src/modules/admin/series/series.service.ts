@@ -9,6 +9,7 @@ import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
 import { ChunkedUploadService } from '../../../common/lib/upload/ChunkedUploadService';
 import { VideoDurationService } from '../../../common/lib/video-duration/video-duration.service';
+import { SeriesPublishService } from '../../queue/services/series-publish.service';
 
 @Injectable()
 export class SeriesService {
@@ -17,7 +18,8 @@ export class SeriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly chunkedUploadService: ChunkedUploadService,
-    private readonly videoDurationService: VideoDurationService
+    private readonly videoDurationService: VideoDurationService,
+    private readonly seriesPublishService: SeriesPublishService
   ) { }
 
   /**
@@ -36,7 +38,7 @@ export class SeriesService {
   ): Promise<SeriesResponse<Series>> {
 
     try {
-      this.logger.log('Creating new series');
+
 
       // Generate slug from title if not provided
       const slug = createSeriesDto.slug || StringHelper.slugify(createSeriesDto.title);
@@ -55,7 +57,7 @@ export class SeriesService {
       if (thumbnail) {
         thumbnailFileName = StringHelper.generateRandomFileName(thumbnail.originalname);
         await SojebStorage.put(appConfig().storageUrl.series_thumbnail + thumbnailFileName, thumbnail.buffer);
-        this.logger.log(`Uploaded thumbnail: ${thumbnailFileName}`);
+
       }
 
       // calculate total price
@@ -99,7 +101,6 @@ export class SeriesService {
             if (courseFileData?.introVideo) {
               introVideoUrl = StringHelper.generateRandomFileName(courseFileData.introVideo.originalname);
               await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, courseFileData.introVideo.buffer);
-              this.logger.log(`Uploaded intro video for course ${i}: ${introVideoUrl}`);
             }
 
             // Handle end video file upload for this course
@@ -107,7 +108,6 @@ export class SeriesService {
             if (courseFileData?.endVideo) {
               endVideoUrl = StringHelper.generateRandomFileName(courseFileData.endVideo.originalname);
               await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, courseFileData.endVideo.buffer);
-              this.logger.log(`Uploaded end video for course ${i}: ${endVideoUrl}`);
             }
 
             const course = await prisma.course.create({
@@ -115,6 +115,7 @@ export class SeriesService {
                 series_id: series.id,
                 title: courseDto.title,
                 position: courseDto.position || i,
+                price: courseDto.price,
                 intro_video_url: introVideoUrl,
                 end_video_url: endVideoUrl,
               },
@@ -128,8 +129,6 @@ export class SeriesService {
             );
 
             if (maxFiles > 0) {
-              this.logger.log(`Processing ${maxFiles} lesson files for course ${i}`);
-
               for (let j = 0; j < maxFiles; j++) {
                 const videoFile = courseFileData?.videoFiles?.[j];
                 const docFile = courseFileData?.docFiles?.[j];
@@ -152,10 +151,10 @@ export class SeriesService {
                   primaryKind = fileKind;
 
                   if (fileKind === 'video' && this.videoDurationService.isVideoFile(videoFile.mimetype)) {
-                    this.logger.log(`Processing video file: ${videoFileName}, MIME type: ${videoFile.mimetype}, Buffer size: ${videoFile.buffer.length}`);
+
                     try {
                       videoLength = await this.videoDurationService.calculateVideoLength(videoFile.buffer, videoFile.originalname);
-                      this.logger.log(`Calculated video length for ${videoFileName}: ${videoLength}`);
+
                       if (videoLength) {
                         lessonLengths.push(videoLength);
                       } else {
@@ -165,7 +164,6 @@ export class SeriesService {
                       this.logger.error(`Failed to calculate video length for ${videoFileName}: ${error.message}`, error.stack);
                     }
                   } else {
-                    this.logger.log(`Skipping non-video file: ${videoFileName}, MIME type: ${videoFile.mimetype}, File kind: ${fileKind}`);
                   }
                 }
 
@@ -182,7 +180,7 @@ export class SeriesService {
                   if (!videoFile) {
                     primaryKind = docFileKind;
                   }
-                  this.logger.log(`Processing document file: ${docFileName}, File kind: ${docFileKind}`);
+
                 }
 
                 // Create lesson file with both URL and doc if available
@@ -199,10 +197,10 @@ export class SeriesService {
                   },
                 });
 
-                this.logger.log(`Created lesson file ${j + 1}: video=${!!videoFileName}, doc=${!!docFileName}, kind=${primaryKind}`);
+
               }
 
-              this.logger.log(`Created ${maxFiles} lesson files for course ${i} (with combined video and document files)`);
+
             }
 
             // Calculate and update course video length
@@ -212,10 +210,10 @@ export class SeriesService {
                 where: { id: course.id },
                 data: { video_length: courseLength },
               });
-              this.logger.log(`Updated course video length: ${courseLength}`);
+
             }
           }
-          this.logger.log(`Created ${createSeriesDto.courses.length} courses for series`);
+
 
           // Calculate and update series video length
           const courses = await prisma.course.findMany({
@@ -230,12 +228,85 @@ export class SeriesService {
               where: { id: series.id },
               data: { video_length: seriesLength },
             });
-            this.logger.log(`Updated series video length: ${seriesLength}`);
+
           }
+
+          // Calculate and update series duration based on start_date and end_date
+          if (series.start_date && series.end_date) {
+            const duration = this.calculateSeriesDuration(series.start_date, series.end_date);
+            await prisma.series.update({
+              where: { id: series.id },
+              data: { duration },
+            });
+
+          }
+
+          //   Handle publication based on start_date
+          // if (series.start_date) {
+          //   const now = new Date();
+          //   if (series.start_date > now) {
+          //     // Future start date - schedule publication
+          //     console.log('Scheduling series publication for series ID: ', series.id);
+          //     // Update series status to SCHEDULED within the transaction
+          //     await prisma.series.update({
+          //       where: { id: series.id },
+          //       data: {
+          //         publication_status: 'SCHEDULED',
+          //         visibility: 'SCHEDULED',
+          //         scheduled_publish_at: series.start_date,
+          //       },
+          //     });
+
+          //   } else {
+          //     // Past or current start date - publish immediately
+          //     console.log('Publishing series immediately for series ID: ', series.id);
+          //     // Update series status to PUBLISHED within the transaction
+          //     await prisma.series.update({
+          //       where: { id: series.id },
+          //       data: {
+          //         visibility: 'PUBLISHED',
+          //         publication_status: 'PUBLISHED',
+          //         scheduled_publish_at: null,
+          //       },
+          //     });
+
+          //   }
+          // } else {
+          //   // No start date - keep as draft
+          //   await prisma.series.update({
+          //     where: { id: series.id },
+          //     data: {
+          //       visibility: 'PUBLISHED',
+          //       publication_status: 'PUBLISHED',
+          //       scheduled_publish_at: null,
+          //     },
+          //   });
+          // }
         }
 
         return series;
       });
+
+      // Schedule queue jobs after transaction is committed (for future dates only)
+      if (result.start_date && result.start_date > new Date()) {
+        try {
+          await this.seriesPublishService.scheduleSeriesPublication(result.id, result.start_date);
+
+        } catch (error) {
+          this.logger.error(`Failed to schedule queue job for series ${result.id}: ${error.message}`, error.stack);
+          // Don't fail the entire creation process if queue scheduling fails
+
+        }
+      } else {
+        await this.prisma.series.update({
+          where: { id: result.id },
+          data: {
+            visibility: 'PUBLISHED',
+            publication_status: 'PUBLISHED',
+            scheduled_publish_at: null,
+          },
+        });
+      }
 
       // Fetch the complete series with relations
       const seriesWithRelations = await this.prisma.series.findUnique({
@@ -247,7 +318,7 @@ export class SeriesService {
         }
       });
 
-      this.logger.log(`Series created successfully with ID: ${result.id}`);
+
 
       return {
         success: true,
@@ -273,7 +344,7 @@ export class SeriesService {
    */
   async findAll(page: number = 1, limit: number = 10, search?: string): Promise<SeriesResponse<{ series: any[]; pagination: any }>> {
     try {
-      this.logger.log('Fetching all series');
+
 
       const skip = (page - 1) * limit;
 
@@ -417,7 +488,7 @@ export class SeriesService {
    */
   async findOne(id: string): Promise<SeriesResponse<Series>> {
     try {
-      this.logger.log(`Fetching series with ID: ${id}`);
+
 
       const series = await this.prisma.series.findUnique({
         where: { id },
@@ -522,7 +593,7 @@ export class SeriesService {
    */
   async update(id: string, updateSeriesDto: UpdateSeriesDto, thumbnail?: Express.Multer.File): Promise<SeriesResponse<any>> {
     try {
-      this.logger.log(`Updating series with ID: ${id}`);
+
 
       // Check if series exists
       const existingSeries = await this.prisma.series.findUnique({
@@ -578,6 +649,30 @@ export class SeriesService {
         if (updateSeriesDto.start_date) updateData.start_date = new Date(updateSeriesDto.start_date);
         if (updateSeriesDto.end_date) updateData.end_date = new Date(updateSeriesDto.end_date);
 
+        // Calculate duration if both dates are provided
+        if (updateData.start_date && updateData.end_date) {
+          updateData.duration = this.calculateSeriesDuration(updateData.start_date, updateData.end_date);
+        }
+
+        // Handle publication scheduling
+        if (updateData.start_date) {
+          const newStartDate = updateData.start_date;
+          const now = new Date();
+
+          if (newStartDate > now) {
+            // Future start date - schedule publication
+            updateData.publication_status = 'SCHEDULED';
+            updateData.scheduled_publish_at = newStartDate;
+
+          } else {
+            // Past or current start date - publish immediately
+            updateData.visibility = 'PUBLISHED';
+            updateData.publication_status = 'PUBLISHED';
+            updateData.scheduled_publish_at = null;
+
+          }
+        }
+
         const series = await prisma.series.update({
           where: { id },
           data: updateData,
@@ -585,6 +680,30 @@ export class SeriesService {
 
         return series;
       });
+
+      // Handle queue scheduling after transaction is committed
+      if (updateSeriesDto.start_date) {
+        const newStartDate = new Date(updateSeriesDto.start_date);
+        const now = new Date();
+
+        if (newStartDate > now) {
+          // Future start date - schedule publication
+          try {
+            await this.seriesPublishService.scheduleSeriesPublication(id, newStartDate);
+
+          } catch (error) {
+            this.logger.error(`Failed to schedule queue job for series ${id}: ${error.message}`, error.stack);
+          }
+        } else {
+          // Past or current start date - cancel any existing scheduled jobs
+          try {
+            await this.seriesPublishService.cancelScheduledPublication(id);
+
+          } catch (error) {
+            this.logger.error(`Failed to cancel scheduled jobs for series ${id}: ${error.message}`, error.stack);
+          }
+        }
+      }
 
       // Fetch the complete updated series with relations
       const seriesWithRelations = await this.prisma.series.findUnique({
@@ -601,7 +720,7 @@ export class SeriesService {
         seriesWithRelations.thumbnail = appConfig().storageUrl.series_thumbnail + seriesWithRelations.thumbnail;
       }
 
-      this.logger.log(`Series updated successfully with ID: ${id}`);
+
 
       return {
         success: true,
@@ -627,7 +746,7 @@ export class SeriesService {
    */
   async remove(id: string): Promise<SeriesResponse<{ id: string }>> {
     try {
-      this.logger.log(`Deleting series with ID: ${id}`);
+
 
       // Check if series exists and get file information
       const existingSeries = await this.prisma.series.findUnique({
@@ -702,7 +821,7 @@ export class SeriesService {
         where: { id },
       });
 
-      this.logger.log(`Series deleted successfully with ID: ${id}`);
+
 
       return {
         success: true,
@@ -766,6 +885,533 @@ export class SeriesService {
         return 'slides';
       default:
         return 'other';
+    }
+  }
+
+  /**
+   * Calculate series duration from start_date to end_date
+   */
+  private calculateSeriesDuration(startDate: Date, endDate: Date): string {
+    const diffInMs = endDate.getTime() - startDate.getTime();
+    const diffInDays = Math.ceil(diffInMs / (1000 * 60 * 60 * 24));
+
+    if (diffInDays < 7) {
+      return `${diffInDays} day${diffInDays > 1 ? 's' : ''}`;
+    } else if (diffInDays < 30) {
+      const weeks = Math.floor(diffInDays / 7);
+      const remainingDays = diffInDays % 7;
+      let result = `${weeks} week${weeks > 1 ? 's' : ''}`;
+      if (remainingDays > 0) {
+        result += ` ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+      }
+      return result;
+    } else if (diffInDays < 365) {
+      const months = Math.floor(diffInDays / 30);
+      const remainingDays = diffInDays % 30;
+      let result = `${months} month${months > 1 ? 's' : ''}`;
+      if (remainingDays > 0) {
+        const weeks = Math.floor(remainingDays / 7);
+        if (weeks > 0) {
+          result += ` ${weeks} week${weeks > 1 ? 's' : ''}`;
+        }
+      }
+      return result;
+    } else {
+      const years = Math.floor(diffInDays / 365);
+      const remainingDays = diffInDays % 365;
+      let result = `${years} year${years > 1 ? 's' : ''}`;
+      if (remainingDays > 0) {
+        const months = Math.floor(remainingDays / 30);
+        if (months > 0) {
+          result += ` ${months} month${months > 1 ? 's' : ''}`;
+        }
+      }
+      return result;
+    }
+  }
+
+  /**
+   * Publish a series immediately
+   */
+  async publishSeries(id: string): Promise<SeriesResponse<Series>> {
+    try {
+
+
+      const series = await this.prisma.series.findUnique({
+        where: { id },
+      });
+
+      if (!series) {
+        throw new NotFoundException(`Series with ID ${id} not found`);
+      }
+
+      await this.seriesPublishService.publishSeriesImmediately(id);
+
+      const updatedSeries = await this.prisma.series.findUnique({
+        where: { id },
+      });
+
+
+
+      return {
+        success: true,
+        message: 'Series published successfully',
+        data: updatedSeries,
+      };
+    } catch (error) {
+      this.logger.error(`Error publishing series ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to publish series',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Get publication status of a series
+   */
+  async getSeriesPublicationStatus(id: string): Promise<SeriesResponse<any>> {
+    try {
+
+
+      const series = await this.prisma.series.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          publication_status: true,
+          scheduled_publish_at: true,
+          visibility: true,
+          start_date: true,
+        },
+      });
+
+      if (!series) {
+        throw new NotFoundException(`Series with ID ${id} not found`);
+      }
+
+      const status = await this.seriesPublishService.getSeriesPublicationStatus(id);
+
+      return {
+        success: true,
+        message: 'Series publication status retrieved successfully',
+        data: {
+          ...series,
+          ...status,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error getting publication status for series ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to get series publication status',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Cancel scheduled publication for a series
+   */
+  async cancelScheduledPublication(id: string): Promise<SeriesResponse<Series>> {
+    try {
+
+
+      const series = await this.prisma.series.findUnique({
+        where: { id },
+      });
+
+      if (!series) {
+        throw new NotFoundException(`Series with ID ${id} not found`);
+      }
+
+      await this.seriesPublishService.cancelScheduledPublication(id);
+
+      const updatedSeries = await this.prisma.series.findUnique({
+        where: { id },
+      });
+
+
+
+      return {
+        success: true,
+        message: 'Scheduled publication cancelled successfully',
+        data: updatedSeries,
+      };
+    } catch (error) {
+      this.logger.error(`Error cancelling scheduled publication for series ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to cancel scheduled publication',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Update a course by ID
+   */
+  async updateCourse(
+    courseId: string,
+    updateData: {
+      title?: string;
+      position?: number;
+      price?: number;
+      intro_video_url?: string;
+      end_video_url?: string;
+    },
+    introVideo?: Express.Multer.File,
+    endVideo?: Express.Multer.File
+  ): Promise<SeriesResponse<any>> {
+    try {
+      // Check if course exists
+      const existingCourse = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        select: {
+          id: true,
+          title: true,
+          intro_video_url: true,
+          end_video_url: true,
+          series_id: true
+        },
+      });
+
+      if (!existingCourse) {
+        throw new NotFoundException(`Course with ID ${courseId} not found`);
+      }
+
+      // Handle intro video file upload if provided
+      let introVideoUrl: string | undefined;
+      if (introVideo) {
+        // Delete old intro video if exists
+        if (existingCourse.intro_video_url) {
+          try {
+            await SojebStorage.delete(appConfig().storageUrl.module_file + existingCourse.intro_video_url);
+          } catch (error) {
+            this.logger.warn(`Failed to delete old intro video: ${error.message}`);
+          }
+        }
+
+        // Upload new intro video
+        introVideoUrl = StringHelper.generateRandomFileName(introVideo.originalname);
+        await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, introVideo.buffer);
+      }
+
+      // Handle end video file upload if provided
+      let endVideoUrl: string | undefined;
+      if (endVideo) {
+        // Delete old end video if exists
+        if (existingCourse.end_video_url) {
+          try {
+            await SojebStorage.delete(appConfig().storageUrl.module_file + existingCourse.end_video_url);
+          } catch (error) {
+            this.logger.warn(`Failed to delete old end video: ${error.message}`);
+          }
+        }
+
+        // Upload new end video
+        endVideoUrl = StringHelper.generateRandomFileName(endVideo.originalname);
+        await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, endVideo.buffer);
+      }
+
+      // Update course
+      const updatedCourse = await this.prisma.course.update({
+        where: { id: courseId },
+        data: {
+          ...updateData,
+          ...(introVideoUrl && { intro_video_url: introVideoUrl }),
+          ...(endVideoUrl && { end_video_url: endVideoUrl }),
+        },
+        include: {
+          lesson_files: {
+            orderBy: { position: 'asc' },
+          },
+        },
+      });
+
+      // Update series total price and video length
+      await this.updateSeriesTotalsPrice(existingCourse.series_id);
+
+      // Add file URLs
+      if (updatedCourse.intro_video_url) {
+        updatedCourse['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + updatedCourse.intro_video_url);
+      }
+      if (updatedCourse.end_video_url) {
+        updatedCourse['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + updatedCourse.end_video_url);
+      }
+
+      if (updatedCourse.lesson_files && updatedCourse.lesson_files.length > 0) {
+        for (const lessonFile of updatedCourse.lesson_files) {
+          if (lessonFile.url) {
+            lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+          }
+          if (lessonFile.doc) {
+            lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Course updated successfully',
+        data: updatedCourse,
+      };
+    } catch (error) {
+      this.logger.error(`Error updating course ${courseId}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to update course',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Update a lesson file by ID
+   */
+  async updateLesson(
+    lessonId: string,
+    updateData: {
+      title?: string;
+      position?: number;
+      alt?: string;
+    },
+    videoFile?: Express.Multer.File,
+    docFile?: Express.Multer.File
+  ): Promise<SeriesResponse<any>> {
+    try {
+      // Check if lesson exists
+      const existingLesson = await this.prisma.lessonFile.findUnique({
+        where: { id: lessonId },
+        select: {
+          id: true,
+          title: true,
+          url: true,
+          doc: true,
+          kind: true,
+          position: true,
+          course: {
+            select: {
+              series_id: true
+            }
+          }
+        },
+      });
+
+      if (!existingLesson) {
+        throw new NotFoundException(`Lesson with ID ${lessonId} not found`);
+      }
+
+      let videoFileName: string | undefined;
+      let docFileName: string | undefined;
+      let videoLength: string | null = null;
+      let primaryKind = existingLesson.kind;
+
+      // Handle video file upload if provided
+      if (videoFile) {
+        // Delete old video file if exists
+        if (existingLesson.url) {
+          try {
+            await SojebStorage.delete(appConfig().storageUrl.lesson_file + existingLesson.url);
+          } catch (error) {
+            this.logger.warn(`Failed to delete old video file: ${error.message}`);
+          }
+        }
+
+        // Upload new video file
+        const videoTitle = updateData.title || videoFile.originalname.split('.')[0];
+        videoFileName = StringHelper.generateLessonFileName(existingLesson.position || 0, videoTitle, videoFile.originalname);
+        await SojebStorage.put(appConfig().storageUrl.lesson_file + videoFileName, videoFile.buffer);
+
+        const fileKind = this.getFileKind(videoFile.mimetype);
+        primaryKind = fileKind;
+
+        // Calculate video length if it's a video file
+        if (fileKind === 'video' && this.videoDurationService.isVideoFile(videoFile.mimetype)) {
+          try {
+            videoLength = await this.videoDurationService.calculateVideoLength(videoFile.buffer, videoFile.originalname);
+          } catch (error) {
+            this.logger.error(`Failed to calculate video length: ${error.message}`, error.stack);
+          }
+        }
+      }
+
+      // Handle document file upload if provided
+      if (docFile) {
+        // Delete old document file if exists
+        if (existingLesson.doc) {
+          try {
+            await SojebStorage.delete(appConfig().storageUrl.doc_file + existingLesson.doc);
+          } catch (error) {
+            this.logger.warn(`Failed to delete old document file: ${error.message}`);
+          }
+        }
+
+        // Upload new document file
+        const docTitle = updateData.title || docFile.originalname.split('.')[0];
+        docFileName = StringHelper.generateLessonFileName(existingLesson.position || 0, docTitle, docFile.originalname);
+        await SojebStorage.put(appConfig().storageUrl.doc_file + docFileName, docFile.buffer);
+
+        const docFileKind = this.getFileKind(docFile.mimetype);
+        if (!videoFile) {
+          primaryKind = docFileKind;
+        }
+      }
+
+      // Update lesson file
+      const updatedLesson = await this.prisma.lessonFile.update({
+        where: { id: lessonId },
+        data: {
+          ...updateData,
+          ...(videoFileName && { url: videoFileName }),
+          ...(docFileName && { doc: docFileName }),
+          ...(videoLength && { video_length: videoLength }),
+          kind: primaryKind,
+        },
+      });
+
+      await this.updateSeriesTotalsVideoLength(existingLesson.course.series_id);
+
+      // Add file URLs
+      if (updatedLesson.url) {
+        updatedLesson['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + updatedLesson.url);
+      }
+      if (updatedLesson.doc) {
+        updatedLesson['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + updatedLesson.doc);
+      }
+
+      // Recalculate course video length if video was updated
+      if (videoFile && videoLength) {
+        // First, get the course_id from the lesson
+        const lessonWithCourse = await this.prisma.lessonFile.findUnique({
+          where: { id: lessonId },
+          select: { course_id: true }
+        });
+
+        if (lessonWithCourse) {
+          const course = await this.prisma.course.findUnique({
+            where: { id: lessonWithCourse.course_id },
+            include: {
+              lesson_files: {
+                select: { video_length: true },
+              },
+            },
+          });
+
+          if (course && course.lesson_files.length > 0) {
+            const lessonLengths = course.lesson_files
+              .map(lesson => lesson.video_length)
+              .filter(length => length);
+
+            if (lessonLengths.length > 0) {
+              const courseLength = this.videoDurationService.calculateTotalLength(lessonLengths);
+              await this.prisma.course.update({
+                where: { id: lessonWithCourse.course_id },
+                data: { video_length: courseLength },
+              });
+            }
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Lesson updated successfully',
+        data: updatedLesson,
+      };
+    } catch (error) {
+      this.logger.error(`Error updating lesson ${lessonId}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to update lesson',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Update series total price and video length based on all courses
+   */
+  private async updateSeriesTotalsPrice(seriesId: string): Promise<void> {
+    try {
+      // Get all courses for the series
+      const courses = await this.prisma.course.findMany({
+        where: { series_id: seriesId },
+        select: {
+          price: true,
+        },
+      });
+
+      // Calculate total price
+      const totalPrice = courses.reduce((acc, course) => {
+        const coursePrice = course.price ? Number(course.price) : 0;
+        return acc + coursePrice;
+      }, 0);
+
+      await this.prisma.series.update({
+        where: { id: seriesId },
+        data: {
+          total_price: totalPrice,
+        },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to update series totals for ${seriesId}: ${error.message}`, error.stack);
+    }
+  }
+
+  private async updateSeriesTotalsVideoLength(seriesId: string): Promise<void> {
+    try {
+      // Get all courses for the series
+      const courses = await this.prisma.course.findMany({
+        where: { series_id: seriesId },
+        select: {
+          video_length: true
+        },
+      });
+
+      // Calculate total video length
+      const courseLengths = courses.map(course => course.video_length).filter(length => length);
+      const seriesVideoLength = courseLengths.length > 0
+        ? this.videoDurationService.calculateTotalLength(courseLengths)
+        : null;
+
+      // Update series with calculated video length
+      await this.prisma.series.update({
+        where: { id: seriesId },
+        data: {
+          video_length: seriesVideoLength,
+        },
+      });
+
+      this.logger.log(`Updated series video length for ${seriesId}: ${seriesVideoLength}`);
+    } catch (error) {
+      this.logger.error(`Failed to update series video length for ${seriesId}: ${error.message}`, error.stack);
     }
   }
 }

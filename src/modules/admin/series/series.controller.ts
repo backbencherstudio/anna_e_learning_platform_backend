@@ -163,57 +163,6 @@ export class SeriesController {
   }
 
   /**
-   * Create series with chunked uploads
-   */
-  // @Post('create-with-chunks')
-  // @HttpCode(HttpStatus.CREATED)
-  // async createWithChunkedUploads(
-  //   @Body() createSeriesDto: CreateSeriesDto & {
-  //     chunkedUploads?: {
-  //       courseIndex: number;
-  //       uploadId: string;
-  //       fileName: string;
-  //       lessonTitle?: string;
-  //     }[];
-  //   }
-  // ) {
-  //   try {
-  //     this.logger.log('Creating series with chunked uploads');
-
-  //     // Parse chunked uploads by course
-  //     const courseFiles = [];
-  //     const chunkedUploads = createSeriesDto.chunkedUploads || [];
-
-  //     // Group chunked uploads by course index
-  //     const uploadsByCourse = chunkedUploads.reduce((acc, upload) => {
-  //       if (!acc[upload.courseIndex]) {
-  //         acc[upload.courseIndex] = [];
-  //       }
-  //       acc[upload.courseIndex].push(upload);
-  //       return acc;
-  //     }, {} as Record<number, any[]>);
-
-  //     // Create course files structure
-  //     for (let i = 0; i < (createSeriesDto.courses?.length || 0); i++) {
-  //       if (uploadsByCourse[i] || i < 10) {
-  //         courseFiles.push({
-  //           courseIndex: i,
-  //           chunkedUploads: uploadsByCourse[i] || []
-  //         });
-  //       }
-  //     }
-
-  //     return this.seriesService.create(createSeriesDto, null, courseFiles);
-  //   } catch (error) {
-  //     this.logger.error(`Error creating series with chunked uploads: ${error.message}`);
-  //     return {
-  //       success: false,
-  //       message: error.message
-  //     };
-  //   }
-  // }
-
-  /**
    * Parse module files from uploaded files
    * Supports up to 10 modules with intro videos, end videos, and lesson files
    */
@@ -240,5 +189,75 @@ export class SeriesController {
     }
 
     return courseFiles;
+  }
+
+  @Patch(':id/publish')
+  @HttpCode(HttpStatus.OK)
+  async publishSeries(@Param('id') id: string) {
+    return this.seriesService.publishSeries(id);
+  }
+
+  @Get(':id/publication-status')
+  @HttpCode(HttpStatus.OK)
+  async getPublicationStatus(@Param('id') id: string) {
+    return this.seriesService.getSeriesPublicationStatus(id);
+  }
+
+  @Patch(':id/cancel-publication')
+  @HttpCode(HttpStatus.OK)
+  async cancelScheduledPublication(@Param('id') id: string) {
+    return this.seriesService.cancelScheduledPublication(id);
+  }
+
+  @Patch('course/:courseId')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'introVideo', maxCount: 1 },
+      { name: 'endVideo', maxCount: 1 },
+    ], multerConfig)
+  )
+  async updateCourse(
+    @Param('courseId') courseId: string,
+    @Body() updateData: {
+      title?: string;
+      position?: number;
+      price?: number;
+      intro_video_url?: string;
+      end_video_url?: string;
+    },
+    @UploadedFiles() files: {
+      introVideo?: Express.Multer.File[];
+      endVideo?: Express.Multer.File[];
+    }
+  ) {
+    const introVideo = files.introVideo?.[0];
+    const endVideo = files.endVideo?.[0];
+    return this.seriesService.updateCourse(courseId, updateData, introVideo, endVideo);
+  }
+
+  @Patch('lesson/:lessonId')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'videoFile', maxCount: 1 },
+      { name: 'docFile', maxCount: 1 },
+    ], multerConfig)
+  )
+  async updateLesson(
+    @Param('lessonId') lessonId: string,
+    @Body() updateData: {
+      title?: string;
+      position?: number;
+      alt?: string;
+    },
+    @UploadedFiles() files: {
+      videoFile?: Express.Multer.File[];
+      docFile?: Express.Multer.File[];
+    }
+  ) {
+    const videoFile = files.videoFile?.[0];
+    const docFile = files.docFile?.[0];
+    return this.seriesService.updateLesson(lessonId, updateData, videoFile, docFile);
   }
 }

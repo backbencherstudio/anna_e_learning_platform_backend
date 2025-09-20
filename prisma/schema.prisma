@@ -485,20 +485,22 @@ model Series {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title          String
-  slug           String    @unique
-  summary        String?
-  description    String?
-  visibility     String?   @default("DRAFT")
-  video_length   String?
-  duration       String?
-  start_date     DateTime?
-  end_date       DateTime?
-  thumbnail      String?
-  total_price    Decimal?
-  course_type    String?   @default("regular")
-  note           String?
-  available_site Int?      @default(0) // "all", "web", "mobile", "app"
+  title                String
+  slug                 String    @unique
+  summary              String?
+  description          String?
+  visibility           String?   @default("DRAFT")
+  video_length         String?
+  duration             String?
+  start_date           DateTime?
+  end_date             DateTime?
+  thumbnail            String?
+  total_price          Decimal?
+  course_type          String?   @default("regular")
+  note                 String?
+  available_site       Int?      @default(0) // "all", "web", "mobile", "app"
+  publication_status   String?   @default("DRAFT") // "DRAFT", "SCHEDULED", "PUBLISHED"
+  scheduled_publish_at DateTime?
 
   language_id String?
   language    Language? @relation(fields: [language_id], references: [id])
