@@ -260,4 +260,144 @@ export class SeriesController {
     const docFile = files.docFile?.[0];
     return this.seriesService.updateLesson(lessonId, updateData, videoFile, docFile);
   }
+
+  @Patch(':id/update-all')
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileFieldsInterceptor([
+      { name: 'thumbnail', maxCount: 1 },
+      // Course files - support up to 10 courses
+      { name: 'course_0_introVideo', maxCount: 1 },
+      { name: 'course_0_endVideo', maxCount: 1 },
+      { name: 'course_1_introVideo', maxCount: 1 },
+      { name: 'course_1_endVideo', maxCount: 1 },
+      { name: 'course_2_introVideo', maxCount: 1 },
+      { name: 'course_2_endVideo', maxCount: 1 },
+      { name: 'course_3_introVideo', maxCount: 1 },
+      { name: 'course_3_endVideo', maxCount: 1 },
+      { name: 'course_4_introVideo', maxCount: 1 },
+      { name: 'course_4_endVideo', maxCount: 1 },
+      // Lesson files - support up to 50 lessons per course
+      { name: 'lesson_0_videoFile', maxCount: 1 },
+      { name: 'lesson_0_docFile', maxCount: 1 },
+      { name: 'lesson_1_videoFile', maxCount: 1 },
+      { name: 'lesson_1_docFile', maxCount: 1 },
+      { name: 'lesson_2_videoFile', maxCount: 1 },
+      { name: 'lesson_2_docFile', maxCount: 1 },
+      { name: 'lesson_3_videoFile', maxCount: 1 },
+      { name: 'lesson_3_docFile', maxCount: 1 },
+      { name: 'lesson_4_videoFile', maxCount: 1 },
+      { name: 'lesson_4_docFile', maxCount: 1 },
+    ], multerConfig)
+  )
+  async updateAll(
+    @Param('id') seriesId: string,
+    @Body() updateData: {
+      series?: {
+        title?: string;
+        slug?: string;
+        summary?: string;
+        description?: string;
+        visibility?: string;
+        video_length?: string;
+        duration?: string;
+        start_date?: string;
+        end_date?: string;
+        total_price?: number;
+        course_type?: string;
+        note?: string;
+        available_site?: number;
+        language_id?: string;
+      };
+      courses?: Array<{
+        id: string;
+        title?: string;
+        position?: number;
+        price?: number;
+        intro_video_url?: string;
+        end_video_url?: string;
+      }>;
+      lessons?: Array<{
+        id: string;
+        title?: string;
+        position?: number;
+        alt?: string;
+      }>;
+    },
+    @UploadedFiles() files: {
+      thumbnail?: Express.Multer.File[];
+      course_0_introVideo?: Express.Multer.File[];
+      course_0_endVideo?: Express.Multer.File[];
+      course_1_introVideo?: Express.Multer.File[];
+      course_1_endVideo?: Express.Multer.File[];
+      course_2_introVideo?: Express.Multer.File[];
+      course_2_endVideo?: Express.Multer.File[];
+      course_3_introVideo?: Express.Multer.File[];
+      course_3_endVideo?: Express.Multer.File[];
+      course_4_introVideo?: Express.Multer.File[];
+      course_4_endVideo?: Express.Multer.File[];
+      lesson_0_videoFile?: Express.Multer.File[];
+      lesson_0_docFile?: Express.Multer.File[];
+      lesson_1_videoFile?: Express.Multer.File[];
+      lesson_1_docFile?: Express.Multer.File[];
+      lesson_2_videoFile?: Express.Multer.File[];
+      lesson_2_docFile?: Express.Multer.File[];
+      lesson_3_videoFile?: Express.Multer.File[];
+      lesson_3_docFile?: Express.Multer.File[];
+      lesson_4_videoFile?: Express.Multer.File[];
+      lesson_4_docFile?: Express.Multer.File[];
+    }
+  ) {
+    // Parse course files
+    const courseFiles = this.parseCourseFilesFromUpdateFiles(files, updateData.courses?.length || 0);
+
+    // Parse lesson files
+    const lessonFiles = this.parseLessonFilesFromUpdateFiles(files, updateData.lessons?.length || 0);
+
+    const processedFiles = {
+      thumbnail: files.thumbnail?.[0],
+      courseFiles,
+      lessonFiles,
+    };
+
+    return this.seriesService.updateAll(seriesId, updateData, processedFiles);
+  }
+
+  private parseCourseFilesFromUpdateFiles(files: any, courseCount: number) {
+    const courseFiles = [];
+
+    for (let i = 0; i < courseCount && i < 5; i++) {
+      const introVideo = files[`course_${i}_introVideo`]?.[0];
+      const endVideo = files[`course_${i}_endVideo`]?.[0];
+
+      if (introVideo || endVideo) {
+        courseFiles.push({
+          courseId: `course_${i}`, // This should be the actual course ID from the request
+          introVideo,
+          endVideo,
+        });
+      }
+    }
+
+    return courseFiles;
+  }
+
+  private parseLessonFilesFromUpdateFiles(files: any, lessonCount: number) {
+    const lessonFiles = [];
+
+    for (let i = 0; i < lessonCount && i < 5; i++) {
+      const videoFile = files[`lesson_${i}_videoFile`]?.[0];
+      const docFile = files[`lesson_${i}_docFile`]?.[0];
+
+      if (videoFile || docFile) {
+        lessonFiles.push({
+          lessonId: `lesson_${i}`, // This should be the actual lesson ID from the request
+          videoFile,
+          docFile,
+        });
+      }
+    }
+
+    return lessonFiles;
+  }
 }

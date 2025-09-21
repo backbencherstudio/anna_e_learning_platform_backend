@@ -432,11 +432,23 @@ export class SeriesService {
 
       // Add file URLs to all series
       for (const seriesItem of series) {
+        // Add series thumbnail URL
         if (seriesItem.thumbnail) {
           seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
         }
+
+        // Add file URLs to courses and lesson files
         if (seriesItem.courses && seriesItem.courses.length > 0) {
           for (const course of seriesItem.courses) {
+            // Add course video URLs
+            if (course.intro_video_url) {
+              course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+            }
+            if (course.end_video_url) {
+              course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+            }
+
+            // Add lesson file URLs
             if (course.lesson_files && course.lesson_files.length > 0) {
               for (const lessonFile of course.lesson_files) {
                 if (lessonFile.url) {
@@ -446,12 +458,6 @@ export class SeriesService {
                   lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
                 }
               }
-            }
-            if (course.intro_video_url) {
-              course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
-            }
-            if (course.end_video_url) {
-              course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
             }
           }
         }
@@ -546,8 +552,19 @@ export class SeriesService {
       if (series.thumbnail) {
         series['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + series.thumbnail);
       }
+
+      // Add file URLs to courses and lesson files
       if (series.courses && series.courses.length > 0) {
         for (const course of series.courses) {
+          // Add course video URLs
+          if (course.intro_video_url) {
+            course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+          }
+          if (course.end_video_url) {
+            course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+          }
+
+          // Add lesson file URLs
           if (course.lesson_files && course.lesson_files.length > 0) {
             for (const lessonFile of course.lesson_files) {
               if (lessonFile.url) {
@@ -557,12 +574,6 @@ export class SeriesService {
                 lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
               }
             }
-          }
-          if (course.intro_video_url) {
-            course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
-          }
-          if (course.end_video_url) {
-            course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
           }
         }
       }
@@ -711,13 +722,43 @@ export class SeriesService {
         include: {
           courses: {
             orderBy: { position: 'asc' },
+            include: {
+              lesson_files: {
+                orderBy: { position: 'asc' },
+              },
+            },
           },
         }
       });
 
-      // Add thumbnail URL
+      // Add file URLs to series
       if (seriesWithRelations?.thumbnail) {
-        seriesWithRelations.thumbnail = appConfig().storageUrl.series_thumbnail + seriesWithRelations.thumbnail;
+        seriesWithRelations['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesWithRelations.thumbnail);
+      }
+
+      // Add file URLs to courses and lesson files
+      if (seriesWithRelations?.courses && seriesWithRelations.courses.length > 0) {
+        for (const course of seriesWithRelations.courses) {
+          // Add course video URLs
+          if (course.intro_video_url) {
+            course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+          }
+          if (course.end_video_url) {
+            course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+          }
+
+          // Add lesson file URLs
+          if (course.lesson_files && course.lesson_files.length > 0) {
+            for (const lessonFile of course.lesson_files) {
+              if (lessonFile.url) {
+                lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+              }
+              if (lessonFile.doc) {
+                lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+              }
+            }
+          }
+        }
       }
 
 
@@ -1350,6 +1391,357 @@ export class SeriesService {
       return {
         success: false,
         message: 'Failed to update lesson',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Comprehensive update method for series, courses, and lessons
+   */
+  async updateAll(
+    seriesId: string,
+    updateData: {
+      series?: UpdateSeriesDto;
+      courses?: Array<{
+        id: string;
+        title?: string;
+        position?: number;
+        price?: number;
+        intro_video_url?: string;
+        end_video_url?: string;
+      }>;
+      lessons?: Array<{
+        id: string;
+        title?: string;
+        position?: number;
+        alt?: string;
+      }>;
+    },
+    files?: {
+      thumbnail?: Express.Multer.File;
+      courseFiles?: {
+        courseId: string;
+        introVideo?: Express.Multer.File;
+        endVideo?: Express.Multer.File;
+      }[];
+      lessonFiles?: {
+        lessonId: string;
+        videoFile?: Express.Multer.File;
+        docFile?: Express.Multer.File;
+      }[];
+    }
+  ): Promise<SeriesResponse<any>> {
+    try {
+      // Check if series exists
+      const existingSeries = await this.prisma.series.findUnique({
+        where: { id: seriesId },
+        select: { id: true, slug: true, thumbnail: true },
+      });
+
+      if (!existingSeries) {
+        throw new NotFoundException(`Series with ID ${seriesId} not found`);
+      }
+
+      // Handle series thumbnail upload if provided
+      let thumbnailFileName: string | undefined;
+      if (files?.thumbnail) {
+        // Delete old thumbnail if exists
+        if (existingSeries.thumbnail) {
+          try {
+            await SojebStorage.delete(appConfig().storageUrl.series_thumbnail + existingSeries.thumbnail);
+          } catch (error) {
+            this.logger.warn(`Failed to delete old thumbnail: ${error.message}`);
+          }
+        }
+
+        // Upload new thumbnail
+        thumbnailFileName = StringHelper.generateRandomFileName(files.thumbnail.originalname);
+        await SojebStorage.put(appConfig().storageUrl.series_thumbnail + thumbnailFileName, files.thumbnail.buffer);
+      }
+
+      // Generate slug from title if title is being updated
+      let slug = updateData.series?.slug;
+      if (updateData.series?.title && !updateData.series?.slug) {
+        slug = StringHelper.slugify(updateData.series.title);
+
+        // Check if new slug already exists (excluding current series)
+        const slugExists = await this.prisma.series.findFirst({
+          where: {
+            slug,
+            id: { not: seriesId },
+          },
+        });
+
+        if (slugExists) {
+          throw new BadRequestException(`Series with slug '${slug}' already exists`);
+        }
+      }
+
+      // Update everything in a transaction
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // Update series
+        if (updateData.series) {
+          const seriesUpdateData: any = { ...updateData.series };
+          if (slug) seriesUpdateData.slug = slug;
+          if (thumbnailFileName) seriesUpdateData.thumbnail = thumbnailFileName;
+          if (updateData.series.start_date) seriesUpdateData.start_date = new Date(updateData.series.start_date);
+          if (updateData.series.end_date) seriesUpdateData.end_date = new Date(updateData.series.end_date);
+
+          // Calculate duration if both dates are provided
+          if (seriesUpdateData.start_date && seriesUpdateData.end_date) {
+            seriesUpdateData.duration = this.calculateSeriesDuration(seriesUpdateData.start_date, seriesUpdateData.end_date);
+          }
+
+          // Handle publication scheduling
+          if (seriesUpdateData.start_date) {
+            const newStartDate = seriesUpdateData.start_date;
+            const now = new Date();
+
+            if (newStartDate > now) {
+              seriesUpdateData.publication_status = 'SCHEDULED';
+              seriesUpdateData.scheduled_publish_at = newStartDate;
+            } else {
+              seriesUpdateData.visibility = 'PUBLISHED';
+              seriesUpdateData.publication_status = 'PUBLISHED';
+              seriesUpdateData.scheduled_publish_at = null;
+            }
+          }
+
+          await prisma.series.update({
+            where: { id: seriesId },
+            data: seriesUpdateData,
+          });
+        }
+
+        // Update courses
+        if (updateData.courses && updateData.courses.length > 0) {
+          for (const courseUpdate of updateData.courses) {
+            // Handle course file uploads
+            const courseFileData = files?.courseFiles?.find(cf => cf.courseId === courseUpdate.id);
+
+            let introVideoUrl: string | undefined;
+            let endVideoUrl: string | undefined;
+
+            if (courseFileData?.introVideo) {
+              // Get existing course to delete old file
+              const existingCourse = await prisma.course.findUnique({
+                where: { id: courseUpdate.id },
+                select: { intro_video_url: true },
+              });
+
+              if (existingCourse?.intro_video_url) {
+                try {
+                  await SojebStorage.delete(appConfig().storageUrl.module_file + existingCourse.intro_video_url);
+                } catch (error) {
+                  this.logger.warn(`Failed to delete old intro video: ${error.message}`);
+                }
+              }
+
+              introVideoUrl = StringHelper.generateRandomFileName(courseFileData.introVideo.originalname);
+              await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, courseFileData.introVideo.buffer);
+            }
+
+            if (courseFileData?.endVideo) {
+              // Get existing course to delete old file
+              const existingCourse = await prisma.course.findUnique({
+                where: { id: courseUpdate.id },
+                select: { end_video_url: true },
+              });
+
+              if (existingCourse?.end_video_url) {
+                try {
+                  await SojebStorage.delete(appConfig().storageUrl.module_file + existingCourse.end_video_url);
+                } catch (error) {
+                  this.logger.warn(`Failed to delete old end video: ${error.message}`);
+                }
+              }
+
+              endVideoUrl = StringHelper.generateRandomFileName(courseFileData.endVideo.originalname);
+              await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, courseFileData.endVideo.buffer);
+            }
+
+            // Update course
+            await prisma.course.update({
+              where: { id: courseUpdate.id },
+              data: {
+                ...courseUpdate,
+                ...(introVideoUrl && { intro_video_url: introVideoUrl }),
+                ...(endVideoUrl && { end_video_url: endVideoUrl }),
+              },
+            });
+          }
+        }
+
+        // Update lessons
+        if (updateData.lessons && updateData.lessons.length > 0) {
+          for (const lessonUpdate of updateData.lessons) {
+            // Handle lesson file uploads
+            const lessonFileData = files?.lessonFiles?.find(lf => lf.lessonId === lessonUpdate.id);
+
+            let videoFileName: string | undefined;
+            let docFileName: string | undefined;
+            let videoLength: string | null = null;
+            let primaryKind: string | undefined;
+
+            if (lessonFileData?.videoFile) {
+              // Get existing lesson to delete old file
+              const existingLesson = await prisma.lessonFile.findUnique({
+                where: { id: lessonUpdate.id },
+                select: { url: true, kind: true, position: true },
+              });
+
+              if (existingLesson?.url) {
+                try {
+                  await SojebStorage.delete(appConfig().storageUrl.lesson_file + existingLesson.url);
+                } catch (error) {
+                  this.logger.warn(`Failed to delete old video file: ${error.message}`);
+                }
+              }
+
+              const videoTitle = lessonUpdate.title || lessonFileData.videoFile.originalname.split('.')[0];
+              videoFileName = StringHelper.generateLessonFileName(existingLesson?.position || 0, videoTitle, lessonFileData.videoFile.originalname);
+              await SojebStorage.put(appConfig().storageUrl.lesson_file + videoFileName, lessonFileData.videoFile.buffer);
+
+              const fileKind = this.getFileKind(lessonFileData.videoFile.mimetype);
+              primaryKind = fileKind;
+
+              // Calculate video length if it's a video file
+              if (fileKind === 'video' && this.videoDurationService.isVideoFile(lessonFileData.videoFile.mimetype)) {
+                try {
+                  videoLength = await this.videoDurationService.calculateVideoLength(lessonFileData.videoFile.buffer, lessonFileData.videoFile.originalname);
+                } catch (error) {
+                  this.logger.error(`Failed to calculate video length: ${error.message}`, error.stack);
+                }
+              }
+            }
+
+            if (lessonFileData?.docFile) {
+              // Get existing lesson to delete old file
+              const existingLesson = await prisma.lessonFile.findUnique({
+                where: { id: lessonUpdate.id },
+                select: { doc: true, kind: true, position: true },
+              });
+
+              if (existingLesson?.doc) {
+                try {
+                  await SojebStorage.delete(appConfig().storageUrl.doc_file + existingLesson.doc);
+                } catch (error) {
+                  this.logger.warn(`Failed to delete old document file: ${error.message}`);
+                }
+              }
+
+              const docTitle = lessonUpdate.title || lessonFileData.docFile.originalname.split('.')[0];
+              docFileName = StringHelper.generateLessonFileName(existingLesson?.position || 0, docTitle, lessonFileData.docFile.originalname);
+              await SojebStorage.put(appConfig().storageUrl.doc_file + docFileName, lessonFileData.docFile.buffer);
+
+              const docFileKind = this.getFileKind(lessonFileData.docFile.mimetype);
+              if (!lessonFileData.videoFile) {
+                primaryKind = docFileKind;
+              }
+            }
+
+            // Update lesson
+            await prisma.lessonFile.update({
+              where: { id: lessonUpdate.id },
+              data: {
+                ...lessonUpdate,
+                ...(videoFileName && { url: videoFileName }),
+                ...(docFileName && { doc: docFileName }),
+                ...(videoLength && { video_length: videoLength }),
+                ...(primaryKind && { kind: primaryKind }),
+              },
+            });
+          }
+        }
+
+        return { success: true };
+      });
+
+      // Handle queue scheduling after transaction is committed
+      if (updateData.series?.start_date) {
+        const newStartDate = new Date(updateData.series.start_date);
+        const now = new Date();
+
+        if (newStartDate > now) {
+          try {
+            await this.seriesPublishService.scheduleSeriesPublication(seriesId, newStartDate);
+          } catch (error) {
+            this.logger.error(`Failed to schedule queue job for series ${seriesId}: ${error.message}`, error.stack);
+          }
+        } else {
+          try {
+            await this.seriesPublishService.cancelScheduledPublication(seriesId);
+          } catch (error) {
+            this.logger.error(`Failed to cancel scheduled jobs for series ${seriesId}: ${error.message}`, error.stack);
+          }
+        }
+      }
+
+      // Update series totals after all updates
+      await this.updateSeriesTotalsPrice(seriesId);
+      await this.updateSeriesTotalsVideoLength(seriesId);
+
+      // Fetch the complete updated series with relations
+      const seriesWithRelations = await this.prisma.series.findUnique({
+        where: { id: seriesId },
+        include: {
+          courses: {
+            orderBy: { position: 'asc' },
+            include: {
+              lesson_files: {
+                orderBy: { position: 'asc' },
+              },
+            },
+          },
+        }
+      });
+
+      // Add file URLs to series
+      if (seriesWithRelations?.thumbnail) {
+        seriesWithRelations['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesWithRelations.thumbnail);
+      }
+
+      // Add file URLs to courses and lesson files
+      if (seriesWithRelations?.courses && seriesWithRelations.courses.length > 0) {
+        for (const course of seriesWithRelations.courses) {
+          // Add course video URLs
+          if (course.intro_video_url) {
+            course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+          }
+          if (course.end_video_url) {
+            course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+          }
+
+          // Add lesson file URLs
+          if (course.lesson_files && course.lesson_files.length > 0) {
+            for (const lessonFile of course.lesson_files) {
+              if (lessonFile.url) {
+                lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+              }
+              if (lessonFile.doc) {
+                lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Series, courses, and lessons updated successfully',
+        data: seriesWithRelations,
+      };
+    } catch (error) {
+      this.logger.error(`Error updating all entities for series ${seriesId}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to update series, courses, and lessons',
         error: error.message,
       };
     }

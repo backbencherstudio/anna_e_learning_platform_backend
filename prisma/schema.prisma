@@ -650,6 +650,10 @@ model Quiz {
   published_at DateTime?
   metadata     Json?
 
+  // Publication scheduling fields
+  publication_status   String    @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHED
+  scheduled_publish_at DateTime?
+
   series      Series           @relation(fields: [series_id], references: [id], onDelete: Cascade)
   course      Course?          @relation(fields: [course_id], references: [id], onDelete: SetNull)
   questions   QuizQuestion[]
@@ -763,6 +767,10 @@ model Assignment {
   due_at       DateTime?
   is_published Boolean   @default(false)
   published_at DateTime?
+
+  // Publication scheduling fields
+  publication_status   String    @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHED
+  scheduled_publish_at DateTime?
 
   series      Series                 @relation(fields: [series_id], references: [id], onDelete: Cascade)
   course      Course?                @relation(fields: [course_id], references: [id], onDelete: SetNull)

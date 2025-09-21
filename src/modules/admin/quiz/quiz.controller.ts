@@ -60,4 +60,16 @@ export class QuizController {
   async remove(@Param('id') id: string) {
     return this.quizService.remove(id);
   }
+
+  @Get(':id/publication-status')
+  @HttpCode(HttpStatus.OK)
+  async getPublicationStatus(@Param('id') id: string) {
+    return this.quizService.getQuizPublicationStatus(id);
+  }
+
+  @Patch(':id/cancel-publication')
+  @HttpCode(HttpStatus.OK)
+  async cancelScheduledPublication(@Param('id') id: string) {
+    return this.quizService.cancelScheduledPublication(id);
+  }
 }

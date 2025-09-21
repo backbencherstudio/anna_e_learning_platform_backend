@@ -58,4 +58,16 @@ export class AssignmentController {
   async remove(@Param('id') id: string) {
     return this.assignmentService.remove(id);
   }
+
+  @Get(':id/publication-status')
+  @HttpCode(HttpStatus.OK)
+  async getPublicationStatus(@Param('id') id: string) {
+    return this.assignmentService.getAssignmentPublicationStatus(id);
+  }
+
+  @Patch(':id/cancel-publication')
+  @HttpCode(HttpStatus.OK)
+  async cancelScheduledPublication(@Param('id') id: string) {
+    return this.assignmentService.cancelScheduledPublication(id);
+  }
 }
