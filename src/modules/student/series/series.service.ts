@@ -34,81 +34,73 @@ export class SeriesService {
                 ],
             } : {};
 
-            const [enrollments, total] = await Promise.all([
-                this.prisma.enrollment.findMany({
-                    where: enrollmentWhere,
-                    skip,
-                    take: limit,
-                    include: {
-                        series: {
-                            select: {
-                                id: true,
-                                title: true,
-                                slug: true,
-                                summary: true,
-                                description: true,
-                                visibility: true,
-                                video_length: true,
-                                duration: true,
-                                start_date: true,
-                                end_date: true,
-                                thumbnail: true,
-                                total_price: true,
-                                course_type: true,
-                                note: true,
-                                available_site: true,
-                                created_at: true,
-                                updated_at: true,
-                                language: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        code: true,
-                                    },
+            // Get all enrollments first (no pagination at DB level when search is used)
+            const enrollments = await this.prisma.enrollment.findMany({
+                where: enrollmentWhere,
+                include: {
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                            slug: true,
+                            summary: true,
+                            description: true,
+                            visibility: true,
+                            video_length: true,
+                            duration: true,
+                            start_date: true,
+                            end_date: true,
+                            thumbnail: true,
+                            total_price: true,
+                            course_type: true,
+                            note: true,
+                            available_site: true,
+                            created_at: true,
+                            updated_at: true,
+                            language: {
+                                select: {
+                                    id: true,
+                                    name: true,
+                                    code: true,
                                 },
-                                courses: {
-                                    select: {
-                                        id: true,
-                                        title: true,
-                                        position: true,
-                                        price: true,
-                                        video_length: true,
-                                        created_at: true,
-                                        updated_at: true,
-                                        intro_video_url: true,
-                                        end_video_url: true,
-                                        lesson_files: {
-                                            select: {
-                                                id: true,
-                                                title: true,
-                                                url: true,
-                                                kind: true,
-                                                alt: true,
-                                                position: true,
-                                                video_length: true,
-                                                is_locked: true,
-                                            },
-                                            orderBy: { position: 'asc' },
+                            },
+                            courses: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    price: true,
+                                    video_length: true,
+                                    intro_video_url: true,
+                                    end_video_url: true,
+                                    lesson_files: {
+                                        select: {
+                                            id: true,
+                                            title: true,
+                                            url: true,
+                                            kind: true,
+                                            alt: true,
+                                            position: true,
+                                            video_length: true,
+                                            is_locked: true,
                                         },
+                                        orderBy: { position: 'asc' },
                                     },
-                                    orderBy: { position: 'asc' },
                                 },
-                                _count: {
-                                    select: {
-                                        courses: true,
-                                        quizzes: true,
-                                        assignments: true,
-                                    },
+                                orderBy: { position: 'asc' },
+                            },
+                            _count: {
+                                select: {
+                                    courses: true,
+                                    quizzes: true,
+                                    assignments: true,
                                 },
                             },
                         },
                     },
-                    orderBy: { enrolled_at: 'desc' },
-                }),
-                this.prisma.enrollment.count({
-                    where: enrollmentWhere,
-                }),
-            ]);
+                },
+                orderBy: { enrolled_at: 'desc' },
+            });
 
             // Filter series based on search if provided
             let filteredEnrollments = enrollments;
@@ -123,8 +115,12 @@ export class SeriesService {
                 });
             }
 
-            // Extract series from enrollments and add enrollment info
-            const series = filteredEnrollments.map(enrollment => {
+            // Apply pagination to filtered results
+            const total = filteredEnrollments.length;
+            const paginatedEnrollments = filteredEnrollments.slice(skip, skip + limit);
+
+            // Extract series from paginated enrollments and add enrollment info
+            const series = paginatedEnrollments.map(enrollment => {
                 const seriesData = enrollment.series;
                 return {
                     ...seriesData,
@@ -147,6 +143,13 @@ export class SeriesService {
                 if (seriesItem.thumbnail) {
                     seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
                 }
+
+                // Calculate total lesson files count
+                const totalLessonFiles = seriesItem.courses?.reduce((total, course) => {
+                    return total + (course.lesson_files?.length || 0);
+                }, 0) || 0;
+                (seriesItem._count as any).lesson_files = totalLessonFiles;
+
                 if (seriesItem.courses && seriesItem.courses.length > 0) {
                     for (const course of seriesItem.courses) {
                         if (course.lesson_files && course.lesson_files.length > 0) {
@@ -387,6 +390,9 @@ export class SeriesService {
             // Unlock next lesson if it exists
             await this.unlockNextLesson(userId, lessonId, lesson.course.id);
 
+            // Update enrollment progress_percentage
+            await this.updateEnrollmentProgress(userId, lesson.course.series_id);
+
             return {
                 success: true,
                 message: 'Lesson marked as completed',
@@ -451,6 +457,12 @@ export class SeriesService {
                     },
                 });
 
+                // update lesson is_locked to false
+                await this.prisma.lessonFile.update({
+                    where: { id: nextLesson.id },
+                    data: { is_locked: false },
+                });
+
                 this.logger.log(`Unlocked next lesson ${nextLesson.id} for user ${userId}`);
             } else {
                 // If no next lesson in current course, check if there's a next course
@@ -501,6 +513,12 @@ export class SeriesService {
                                     is_completed: false,
                                     is_viewed: false,
                                 },
+                            });
+
+                            // update lesson is_locked to false
+                            await this.prisma.lessonFile.update({
+                                where: { id: firstLessonOfNextCourse.id },
+                                data: { is_locked: false },
                             });
 
                             this.logger.log(`Unlocked first lesson ${firstLessonOfNextCourse.id} of next course ${nextCourse.id} for user ${userId}`);
@@ -609,10 +627,664 @@ export class SeriesService {
                     is_viewed: false,
                 },
             });
+            // update lesson is_locked to false
+            await this.prisma.lessonFile.update({
+                where: { id: firstLesson.id },
+                data: { is_locked: false },
+            });
 
             this.logger.log(`Unlocked first lesson ${firstLesson.id} for user ${userId}`);
         } catch (error) {
             this.logger.error(`Error unlocking first lesson: ${error.message}`);
+        }
+    }
+
+    /**
+     * Update enrollment progress percentage based on completed lessons
+     */
+    async updateEnrollmentProgress(userId: string, seriesId: string): Promise<void> {
+        try {
+            this.logger.log(`Updating enrollment progress for user ${userId} in series ${seriesId}`);
+
+            // Get all lessons in the series
+            const totalLessons = await this.prisma.lessonFile.count({
+                where: {
+                    course: {
+                        series_id: seriesId,
+                        deleted_at: null,
+                    },
+                    deleted_at: null,
+                },
+            });
+
+            if (totalLessons === 0) {
+                this.logger.warn(`No lessons found for series ${seriesId}`);
+                return;
+            }
+
+            // Get completed lessons for this user in this series
+            const completedLessons = await this.prisma.lessonProgress.count({
+                where: {
+                    user_id: userId,
+                    series_id: seriesId,
+                    is_completed: true,
+                    deleted_at: null,
+                },
+            });
+
+            // Calculate progress percentage
+            const progressPercentage = Math.round((completedLessons / totalLessons) * 100);
+
+            // Update enrollment progress
+            await this.prisma.enrollment.updateMany({
+                where: {
+                    user_id: userId,
+                    series_id: seriesId,
+                    status: 'ACTIVE' as any,
+                    payment_status: 'completed',
+                    deleted_at: null,
+                },
+                data: {
+                    progress_percentage: progressPercentage,
+                    last_accessed_at: new Date(),
+                    updated_at: new Date(),
+                },
+            });
+
+            this.logger.log(`Updated enrollment progress: ${completedLessons}/${totalLessons} lessons completed (${progressPercentage}%)`);
+        } catch (error) {
+            this.logger.error(`Error updating enrollment progress: ${error.message}`);
+        }
+    }
+
+    /**
+     * Get all enrolled courses for a user with lesson files and progress
+     */
+    async findAllCourses(userId: string, seriesId?: string, page: number = 1, limit: number = 10): Promise<SeriesResponse<{ courses: any[]; pagination: any }>> {
+        try {
+            this.logger.log(`Fetching enrolled courses for user: ${userId}`);
+
+            const skip = (page - 1) * limit;
+
+            // Base where clause for enrolled courses
+            const enrollmentWhere = {
+                user_id: userId,
+                status: 'ACTIVE' as any,
+                payment_status: 'completed',
+                deleted_at: null,
+            };
+
+            // Series filter for enrollment
+            const seriesWhere = seriesId ? {
+                series_id: seriesId,
+            } : {};
+
+            const enrollments = await this.prisma.enrollment.findMany({
+                where: {
+                    ...enrollmentWhere,
+                    ...seriesWhere,
+                },
+                include: {
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                            slug: true,
+                            courses: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    price: true,
+                                    video_length: true,
+                                    created_at: true,
+                                    updated_at: true,
+                                    intro_video_url: true,
+                                    end_video_url: true,
+                                    lesson_files: {
+                                        select: {
+                                            id: true,
+                                            title: true,
+                                            url: true,
+                                            doc: true,
+                                            kind: true,
+                                            alt: true,
+                                            position: true,
+                                            video_length: true,
+                                            is_locked: true,
+                                        },
+                                        orderBy: { position: 'asc' },
+                                    },
+                                    _count: {
+                                        select: {
+                                            lesson_files: true,
+                                        },
+                                    },
+                                },
+                                orderBy: { position: 'asc' },
+                            },
+                        },
+                    },
+                },
+                orderBy: { enrolled_at: 'desc' },
+            });
+
+            // Extract courses from enrollments
+            const allCourses = enrollments.flatMap(enrollment =>
+                enrollment.series.courses.map(course => ({
+                    ...course,
+                    series: {
+                        id: enrollment.series.id,
+                        title: enrollment.series.title,
+                        slug: enrollment.series.slug,
+                    },
+                    enrollment: {
+                        id: enrollment.id,
+                        enrolled_at: enrollment.enrolled_at,
+                        progress_percentage: enrollment.progress_percentage,
+                        last_accessed_at: enrollment.last_accessed_at,
+                    },
+                }))
+            );
+
+            // Apply pagination to courses
+            const total = allCourses.length;
+            const courses = allCourses.slice(skip, skip + limit);
+
+            // Add file URLs and lesson progress to all courses
+            for (const course of courses) {
+                if (course.intro_video_url) {
+                    course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+                }
+                if (course.end_video_url) {
+                    course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+                }
+
+                if (course.lesson_files && course.lesson_files.length > 0) {
+                    // Get lesson progress for this user and course
+                    const lessonProgress = await this.getLessonProgressForCourse(userId, course.id);
+
+                    for (const lessonFile of course.lesson_files) {
+                        if (lessonFile.url) {
+                            lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                        }
+                        if (lessonFile.doc) {
+                            lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+                        }
+
+                        // Check if lesson is unlocked for this user
+                        const progress = lessonProgress.find(p => p.lesson_id === lessonFile.id);
+                        lessonFile['is_unlocked'] = await this.isLessonUnlocked(userId, lessonFile.id, course.lesson_files, lessonProgress);
+                        lessonFile['progress'] = progress || null;
+                    }
+                }
+            }
+
+            // Calculate pagination values
+            const totalPages = Math.ceil(total / limit);
+            const hasNextPage = page < totalPages;
+            const hasPreviousPage = page > 1;
+
+            return {
+                success: true,
+                message: 'Courses retrieved successfully',
+                data: {
+                    courses,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        totalPages,
+                        hasNextPage,
+                        hasPreviousPage,
+                    },
+                },
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching courses: ${error.message}`, error.stack);
+
+            return {
+                success: false,
+                message: 'Failed to fetch courses',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Get a single enrolled course by ID with lesson files and progress
+     */
+    async findOneCourse(userId: string, courseId: string): Promise<SeriesResponse<any>> {
+        try {
+            this.logger.log(`Fetching enrolled course ${courseId} for user: ${userId}`);
+
+            // First check if user is enrolled in the series that contains this course
+            const enrollment = await this.prisma.enrollment.findFirst({
+                where: {
+                    user_id: userId,
+                    status: 'ACTIVE' as any,
+                    payment_status: 'completed',
+                    deleted_at: null,
+                },
+                include: {
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                            slug: true,
+                            courses: {
+                                where: {
+                                    id: courseId,
+                                    deleted_at: null,
+                                },
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    price: true,
+                                    video_length: true,
+                                    created_at: true,
+                                    updated_at: true,
+                                    intro_video_url: true,
+                                    end_video_url: true,
+                                    lesson_files: {
+                                        select: {
+                                            id: true,
+                                            title: true,
+                                            url: true,
+                                            doc: true,
+                                            kind: true,
+                                            alt: true,
+                                            position: true,
+                                            video_length: true,
+                                            is_locked: true,
+                                        },
+                                        orderBy: { position: 'asc' },
+                                    },
+                                    _count: {
+                                        select: {
+                                            lesson_files: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!enrollment || !enrollment.series.courses.length) {
+                return {
+                    success: false,
+                    message: 'Course not found or you are not enrolled in this course',
+                };
+            }
+
+            const course = enrollment.series.courses[0];
+
+            // Add enrollment information
+            const courseWithEnrollment = {
+                ...course,
+                series: {
+                    id: enrollment.series.id,
+                    title: enrollment.series.title,
+                    slug: enrollment.series.slug,
+                },
+                enrollment: {
+                    id: enrollment.id,
+                    enrolled_at: enrollment.enrolled_at,
+                    progress_percentage: enrollment.progress_percentage,
+                    last_accessed_at: enrollment.last_accessed_at,
+                },
+            };
+
+            // Add file URLs
+            if (courseWithEnrollment.intro_video_url) {
+                courseWithEnrollment['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + courseWithEnrollment.intro_video_url);
+            }
+            if (courseWithEnrollment.end_video_url) {
+                courseWithEnrollment['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + courseWithEnrollment.end_video_url);
+            }
+
+            // Add lesson progress and file URLs
+            if (courseWithEnrollment.lesson_files && courseWithEnrollment.lesson_files.length > 0) {
+                // Get lesson progress for this user and course
+                const lessonProgress = await this.getLessonProgressForCourse(userId, courseWithEnrollment.id);
+
+                for (const lessonFile of courseWithEnrollment.lesson_files) {
+                    if (lessonFile.url) {
+                        lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                    }
+                    if (lessonFile.doc) {
+                        lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+                    }
+
+                    // Check if lesson is unlocked for this user
+                    const progress = lessonProgress.find(p => p.lesson_id === lessonFile.id);
+                    lessonFile['is_unlocked'] = await this.isLessonUnlocked(userId, lessonFile.id, courseWithEnrollment.lesson_files, lessonProgress);
+                    lessonFile['progress'] = progress || null;
+                }
+            }
+
+            return {
+                success: true,
+                message: 'Course retrieved successfully',
+                data: courseWithEnrollment,
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching course ${courseId}: ${error.message}`, error.stack);
+
+            return {
+                success: false,
+                message: 'Failed to fetch course',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Get all enrolled lessons for a user with progress
+     */
+    async findAllLessons(userId: string, courseId?: string, seriesId?: string, page: number = 1, limit: number = 10): Promise<SeriesResponse<{ lessons: any[]; pagination: any }>> {
+        try {
+            this.logger.log(`Fetching enrolled lessons for user: ${userId}`);
+
+            const skip = (page - 1) * limit;
+
+            // Base where clause for enrolled lessons
+            const enrollmentWhere = {
+                user_id: userId,
+                status: 'ACTIVE' as any,
+                payment_status: 'completed',
+                deleted_at: null,
+            };
+
+            // Series filter for enrollment
+            const seriesWhere = seriesId ? {
+                series_id: seriesId,
+            } : {};
+
+            const enrollments = await this.prisma.enrollment.findMany({
+                where: {
+                    ...enrollmentWhere,
+                    ...seriesWhere,
+                },
+                include: {
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                            slug: true,
+                            courses: {
+                                where: courseId ? { id: courseId, deleted_at: null } : { deleted_at: null },
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    lesson_files: {
+                                        select: {
+                                            id: true,
+                                            title: true,
+                                            url: true,
+                                            doc: true,
+                                            kind: true,
+                                            alt: true,
+                                            position: true,
+                                            video_length: true,
+                                            is_locked: true,
+                                        },
+                                        orderBy: { position: 'asc' },
+                                    },
+                                },
+                                orderBy: { position: 'asc' },
+                            },
+                        },
+                    },
+                },
+                orderBy: { enrolled_at: 'desc' },
+            });
+
+            // Extract lessons from enrollments
+            const allLessons = enrollments.flatMap(enrollment =>
+                enrollment.series.courses.flatMap(course =>
+                    course.lesson_files.map(lesson => ({
+                        ...lesson,
+                        course: {
+                            id: course.id,
+                            title: course.title,
+                            position: course.position,
+                        },
+                        series: {
+                            id: enrollment.series.id,
+                            title: enrollment.series.title,
+                            slug: enrollment.series.slug,
+                        },
+                        enrollment: {
+                            id: enrollment.id,
+                            enrolled_at: enrollment.enrolled_at,
+                            progress_percentage: enrollment.progress_percentage,
+                            last_accessed_at: enrollment.last_accessed_at,
+                        },
+                    }))
+                )
+            );
+
+            // Apply pagination to lessons
+            const total = allLessons.length;
+            const paginatedLessons = allLessons.slice(skip, skip + limit);
+
+            // Add file URLs and lesson progress to paginated lessons
+            for (const lesson of paginatedLessons) {
+                if (lesson.url) {
+                    lesson['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lesson.url);
+                }
+                if (lesson.doc) {
+                    lesson['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lesson.doc);
+                }
+
+                // Get lesson progress for this user
+                const progress = await this.prisma.lessonProgress.findFirst({
+                    where: {
+                        user_id: userId,
+                        lesson_id: lesson.id,
+                        deleted_at: null,
+                    },
+                    select: {
+                        id: true,
+                        is_completed: true,
+                        is_viewed: true,
+                        completed_at: true,
+                        viewed_at: true,
+                        time_spent: true,
+                        last_position: true,
+                        completion_percentage: true,
+                    },
+                });
+
+                lesson['progress'] = progress || null;
+                lesson['is_unlocked'] = progress ? true : false; // If progress exists, lesson is unlocked
+            }
+
+            // Calculate pagination values
+            const totalPages = Math.ceil(total / limit);
+            const hasNextPage = page < totalPages;
+            const hasPreviousPage = page > 1;
+
+            return {
+                success: true,
+                message: 'Lessons retrieved successfully',
+                data: {
+                    lessons: paginatedLessons,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        totalPages,
+                        hasNextPage,
+                        hasPreviousPage,
+                    },
+                },
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching lessons: ${error.message}`, error.stack);
+
+            return {
+                success: false,
+                message: 'Failed to fetch lessons',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Get a single enrolled lesson by ID with progress
+     */
+    async findOneLesson(userId: string, lessonId: string): Promise<SeriesResponse<any>> {
+        try {
+            this.logger.log(`Fetching enrolled lesson ${lessonId} for user: ${userId}`);
+
+            // First check if user is enrolled in the series that contains this lesson
+            const enrollment = await this.prisma.enrollment.findFirst({
+                where: {
+                    user_id: userId,
+                    status: 'ACTIVE' as any,
+                    payment_status: 'completed',
+                    deleted_at: null,
+                },
+                include: {
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                            slug: true,
+                            courses: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    lesson_files: {
+                                        where: {
+                                            id: lessonId,
+                                            deleted_at: null,
+                                        },
+                                        select: {
+                                            id: true,
+                                            title: true,
+                                            url: true,
+                                            doc: true,
+                                            kind: true,
+                                            alt: true,
+                                            position: true,
+                                            video_length: true,
+                                            is_locked: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!enrollment || !enrollment.series.courses.length) {
+                return {
+                    success: false,
+                    message: 'Lesson not found or you are not enrolled in this lesson',
+                };
+            }
+
+            // Find the lesson in the courses
+            let lesson = null;
+            let course = null;
+            for (const courseItem of enrollment.series.courses) {
+                if (courseItem.lesson_files.length > 0) {
+                    lesson = courseItem.lesson_files[0];
+                    course = {
+                        id: courseItem.id,
+                        title: courseItem.title,
+                        position: courseItem.position,
+                    };
+                    break;
+                }
+            }
+
+            if (!lesson) {
+                return {
+                    success: false,
+                    message: 'Lesson not found or you are not enrolled in this lesson',
+                };
+            }
+
+            // check if lesson is locked
+            if (lesson.is_locked) {
+                return {
+                    success: false,
+                    message: 'Lesson is locked',
+                };
+            }
+
+            // Add course, series, and enrollment information
+            const lessonWithContext = {
+                ...lesson,
+                course,
+                series: {
+                    id: enrollment.series.id,
+                    title: enrollment.series.title,
+                    slug: enrollment.series.slug,
+                },
+                enrollment: {
+                    id: enrollment.id,
+                    enrolled_at: enrollment.enrolled_at,
+                    progress_percentage: enrollment.progress_percentage,
+                    last_accessed_at: enrollment.last_accessed_at,
+                },
+            };
+
+            // Add file URLs
+            if (lessonWithContext.url) {
+                lessonWithContext['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonWithContext.url);
+            }
+            if (lessonWithContext.doc) {
+                lessonWithContext['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonWithContext.doc);
+            }
+
+            // Get lesson progress for this user
+            const progress = await this.prisma.lessonProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                    deleted_at: null,
+                },
+                select: {
+                    id: true,
+                    is_completed: true,
+                    is_viewed: true,
+                    completed_at: true,
+                    viewed_at: true,
+                    time_spent: true,
+                    last_position: true,
+                    completion_percentage: true,
+                },
+            });
+
+            lessonWithContext['progress'] = progress || null;
+            lessonWithContext['is_unlocked'] = progress ? true : false; // If progress exists, lesson is unlocked
+
+            // call view lesson
+            this.markLessonAsViewed(userId, lessonId);
+            return {
+                success: true,
+                message: 'Lesson retrieved successfully',
+                data: lessonWithContext,
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching lesson ${lessonId}: ${error.message}`, error.stack);
+
+            return {
+                success: false,
+                message: 'Failed to fetch lesson',
+                error: error.message,
+            };
         }
     }
 }

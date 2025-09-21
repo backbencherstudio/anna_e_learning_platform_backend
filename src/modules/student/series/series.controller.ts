@@ -3,10 +3,14 @@ import { SeriesService } from './series.service';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { SeriesResponse } from './interfaces/series-response.interface';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
+import { RolesGuard } from 'src/common/guard/role/roles.guard';
+import { Roles } from 'src/common/guard/role/roles.decorator';
+import { Role } from 'src/common/guard/role/role.enum';
 
 @ApiTags('student-series')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.STUDENT)
 @Controller('student/series')
 export class SeriesController {
   constructor(private readonly seriesService: SeriesService) { }
@@ -59,5 +63,56 @@ export class SeriesController {
   ): Promise<SeriesResponse<any>> {
     const userId = req.user.userId;
     return this.seriesService.getLessonProgress(userId, lessonId);
+  }
+
+  @Get('courses')
+  @ApiOperation({ summary: 'Get all courses with lesson files and progress' })
+  async findAllCourses(
+    @Req() req: any,
+    @Query('series_id') seriesId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ): Promise<SeriesResponse<{ courses: any[]; pagination: any }>> {
+    const userId = req.user.userId;
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+
+    return this.seriesService.findAllCourses(userId, seriesId, pageNum, limitNum);
+  }
+
+  @Get('courses/:courseId')
+  @ApiOperation({ summary: 'Get single course with lesson files and progress' })
+  async findOneCourse(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.findOneCourse(userId, courseId);
+  }
+
+  @Get('lessons')
+  @ApiOperation({ summary: 'Get all lessons with progress' })
+  async findAllLessons(
+    @Req() req: any,
+    @Query('course_id') courseId?: string,
+    @Query('series_id') seriesId?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ): Promise<SeriesResponse<{ lessons: any[]; pagination: any }>> {
+    const userId = req.user.userId;
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+
+    return this.seriesService.findAllLessons(userId, courseId, seriesId, pageNum, limitNum);
+  }
+
+  @Get('lessons/:lessonId')
+  @ApiOperation({ summary: 'Get single lesson with progress' })
+  async findOneLesson(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.findOneLesson(userId, lessonId);
   }
 }

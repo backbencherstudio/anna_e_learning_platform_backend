@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { SeriesService } from 'src/modules/admin/series/series.service';
 
 const prisma = new PrismaClient();
 

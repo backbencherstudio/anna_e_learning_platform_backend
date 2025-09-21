@@ -75,9 +75,11 @@ export class EnrollmentService {
                 status: 'pending',
             });
 
-            //  await this.prisma.enrollment.update({ where: { id: enrollment.id }, data: { payment_status: 'pending' } });
+            await this.prisma.enrollment.update({ where: { id: enrollment.id }, data: { payment_status: 'pending' } });
 
             await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
+
+            await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
 
             return {
                 success: true,
@@ -122,9 +124,6 @@ export class EnrollmentService {
                 payment_status: 'completed',
             },
         });
-
-        // Unlock the first lesson for the user
-        await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
     }
 
 }

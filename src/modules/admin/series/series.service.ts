@@ -199,8 +199,6 @@ export class SeriesService {
 
 
               }
-
-
             }
 
             // Calculate and update course video length
@@ -238,50 +236,7 @@ export class SeriesService {
               where: { id: series.id },
               data: { duration },
             });
-
           }
-
-          //   Handle publication based on start_date
-          // if (series.start_date) {
-          //   const now = new Date();
-          //   if (series.start_date > now) {
-          //     // Future start date - schedule publication
-          //     console.log('Scheduling series publication for series ID: ', series.id);
-          //     // Update series status to SCHEDULED within the transaction
-          //     await prisma.series.update({
-          //       where: { id: series.id },
-          //       data: {
-          //         publication_status: 'SCHEDULED',
-          //         visibility: 'SCHEDULED',
-          //         scheduled_publish_at: series.start_date,
-          //       },
-          //     });
-
-          //   } else {
-          //     // Past or current start date - publish immediately
-          //     console.log('Publishing series immediately for series ID: ', series.id);
-          //     // Update series status to PUBLISHED within the transaction
-          //     await prisma.series.update({
-          //       where: { id: series.id },
-          //       data: {
-          //         visibility: 'PUBLISHED',
-          //         publication_status: 'PUBLISHED',
-          //         scheduled_publish_at: null,
-          //       },
-          //     });
-
-          //   }
-          // } else {
-          //   // No start date - keep as draft
-          //   await prisma.series.update({
-          //     where: { id: series.id },
-          //     data: {
-          //       visibility: 'PUBLISHED',
-          //       publication_status: 'PUBLISHED',
-          //       scheduled_publish_at: null,
-          //     },
-          //   });
-          // }
         }
 
         return series;
