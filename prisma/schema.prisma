@@ -576,13 +576,14 @@ model MaterialsFile {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title       String
-  description String?
-  url         String?
-  type        String?
-  kind        String?
-  alt         String?
-  position    Int     @default(0)
+  title        String
+  description  String?
+  lecture_type String?
+  url          String?
+  type         String?
+  kind         String?
+  alt          String?
+  position     Int     @default(0)
 
   series_id String?
   series    Series? @relation(fields: [series_id], references: [id])

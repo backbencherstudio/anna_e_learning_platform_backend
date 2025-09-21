@@ -10,6 +10,10 @@ export class CreateMaterialDto {
     @IsString()
     description?: string;
 
+    @IsNotEmpty()
+    @IsString()
+    lecture_type!: string;
+
     @IsOptional()
     @IsString()
     url?: string;
