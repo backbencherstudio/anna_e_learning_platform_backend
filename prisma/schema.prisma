@@ -109,6 +109,7 @@ model User {
   certificates           Certificate[]
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
   checkouts              Checkout[]
+  scholarship_codes      ScholarshipCode[]
 
   @@map("users")
 }
@@ -516,6 +517,7 @@ model Series {
   student_files   StudentFile[]
   lesson_progress LessonProgress[]
   checkouts       Checkout[]
+  ScholarshipCode ScholarshipCode[]
 
   @@map("series")
 }
@@ -536,12 +538,13 @@ model Course {
   end_video_url   String?
   video_length    String?
 
-  lesson_files    LessonFile[]
-  quizzes         Quiz[]
-  assignments     Assignment[]
-  materials_files MaterialsFile[]
-  student_files   StudentFile[]
-  lesson_progress LessonProgress[]
+  lesson_files     LessonFile[]
+  quizzes          Quiz[]
+  assignments      Assignment[]
+  materials_files  MaterialsFile[]
+  student_files    StudentFile[]
+  lesson_progress  LessonProgress[]
+  scholarshipCodes ScholarshipCode[] @relation("ScholarshipCourse")
 
   @@index([series_id, position])
   @@map("courses")
@@ -1000,4 +1003,30 @@ model Checkout {
   series    Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
   @@map("checkouts")
+}
+
+model ScholarshipCode {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+  status     Int?      @default(1) @db.SmallInt
+
+  code      String?
+  code_type String? @default("code") // code, percentage
+
+  // the human readable scholarship name
+  name             String?
+  // The description of the scholarship - Not necessary 
+  description      String? @db.Text
+  scholarship_type String? @default("free_student")
+  series_id        String?
+  series           Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  student_id String?
+  student    User?   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  courses Course[] @relation("ScholarshipCourse")
+
+  @@map("scholarship_codes")
 }
