@@ -108,6 +108,7 @@ model User {
   lesson_progress        LessonProgress[]
   certificates           Certificate[]
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
+  checkouts              Checkout[]
 
   @@map("users")
 }
@@ -514,6 +515,7 @@ model Series {
   materials_files MaterialsFile[]
   student_files   StudentFile[]
   lesson_progress LessonProgress[]
+  checkouts       Checkout[]
 
   @@map("series")
 }
@@ -981,4 +983,21 @@ model Certificate {
 
   @@unique([user_id, series_id])
   @@map("certificates")
+}
+
+model Checkout {
+  id          String    @id @default(cuid())
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @default(now())
+  deleted_at  DateTime?
+  status      String?
+  total_price Decimal?
+
+  user_id String?
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  series_id String?
+  series    Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  @@map("checkouts")
 }

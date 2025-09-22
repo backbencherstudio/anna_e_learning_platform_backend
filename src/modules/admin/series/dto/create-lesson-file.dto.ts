@@ -1,12 +1,6 @@
 import { IsString, IsNotEmpty, IsOptional, IsInt, Min, MaxLength, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 
-export enum LessonFileKind {
-    IMAGE = 'image',
-    VIDEO = 'video',
-    PDF = 'pdf',
-    SLIDES = 'slides'
-}
 
 export class CreateLessonFileDto {
 
@@ -16,16 +10,16 @@ export class CreateLessonFileDto {
     title?: string;
 
     @IsString()
-    @IsNotEmpty()
-    url!: string;
+    @IsOptional()
+    url?: string;
 
     @IsString()
     @IsOptional()
     doc?: string;
 
     @IsOptional()
-    @IsEnum(LessonFileKind)
-    kind?: LessonFileKind;
+    @IsString()
+    kind?: string;
 
     @IsOptional()
     @IsString()
@@ -40,5 +34,5 @@ export class CreateLessonFileDto {
 
     @IsOptional()
     @IsString()
-    module_id?: string;
+    course_id?: string;
 }

@@ -3,14 +3,18 @@ import { Transform, Type } from 'class-transformer';
 import { CreateLessonFileDto } from './create-lesson-file.dto';
 
 export class CreateCourseDto {
+
+    @IsOptional()
+    @IsString()
+    series_id?: string;
+
     @IsString()
     @IsNotEmpty()
     @MaxLength(200)
     title!: string;
 
     @IsOptional()
-    @Type(() => Number)
-    @IsInt()
+    @Transform(({ value }) => value === undefined ? undefined : Number(value))
     @Min(0)
     position?: number;
 

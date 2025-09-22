@@ -3,6 +3,7 @@ import { EnrollmentModule } from './enrollment/enrollment.module';
 import { SeriesModule } from './series/series.module';
 import { StudentFileModule } from './student-file/student-file.module';
 import { MaterialsModule } from './materials/materials.module';
+import { CheckoutModule } from './checkout/checkout.module';
 ;
 
 @Module({
@@ -10,7 +11,8 @@ import { MaterialsModule } from './materials/materials.module';
         EnrollmentModule,
         SeriesModule,
         StudentFileModule,
-        MaterialsModule
+        MaterialsModule,
+        CheckoutModule
     ],
 })
 export class StudentModule { }
