@@ -7,7 +7,7 @@ export class CreateEnrollmentDto {
 
     @IsString()
     @IsNotEmpty()
-    series_id!: string;
+    checkout_id!: string;
 
     @IsOptional()
     @IsNumber()

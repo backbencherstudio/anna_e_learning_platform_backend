@@ -253,16 +253,8 @@ export class SeriesService {
           // Don't fail the entire creation process if queue scheduling fails
 
         }
-      } else {
-        await this.prisma.series.update({
-          where: { id: result.id },
-          data: {
-            visibility: 'PUBLISHED',
-            publication_status: 'PUBLISHED',
-            scheduled_publish_at: null,
-          },
-        });
       }
+
 
       // Fetch the complete series with relations
       const seriesWithRelations = await this.prisma.series.findUnique({
@@ -342,32 +334,32 @@ export class SeriesService {
                 code: true,
               },
             },
-            courses: {
-              select: {
-                id: true,
-                title: true,
-                position: true,
-                price: true,
-                video_length: true,
-                created_at: true,
-                updated_at: true,
-                intro_video_url: true,
-                end_video_url: true,
-                lesson_files: {
-                  select: {
-                    id: true,
-                    title: true,
-                    url: true,
-                    doc: true,
-                    kind: true,
-                    alt: true,
-                    video_length: true,
-                  },
-                  orderBy: { position: 'asc' },
-                },
-              },
-              orderBy: { position: 'asc' },
-            },
+            // courses: {
+            //   select: {
+            //     id: true,
+            //     title: true,
+            //     position: true,
+            //     price: true,
+            //     video_length: true,
+            //     created_at: true,
+            //     updated_at: true,
+            //     intro_video_url: true,
+            //     end_video_url: true,
+            //     lesson_files: {
+            //       select: {
+            //         id: true,
+            //         title: true,
+            //         url: true,
+            //         doc: true,
+            //         kind: true,
+            //         alt: true,
+            //         video_length: true,
+            //       },
+            //       orderBy: { position: 'asc' },
+            //     },
+            //   },
+            //   orderBy: { position: 'asc' },
+            // },
             _count: {
               select: {
                 courses: true,
@@ -394,35 +386,35 @@ export class SeriesService {
         }
 
         // Calculate total lesson files count
-        const totalLessonFiles = seriesItem.courses?.reduce((total, course) => {
-          return total + (course.lesson_files?.length || 0);
-        }, 0) || 0;
-        (seriesItem._count as any).lesson_files = totalLessonFiles;
+        // const totalLessonFiles = seriesItem.courses?.reduce((total, course) => {
+        //   return total + (course.lesson_files?.length || 0);
+        // }, 0) || 0;
+        // (seriesItem._count as any).lesson_files = totalLessonFiles;
 
         // Add file URLs to courses and lesson files
-        if (seriesItem.courses && seriesItem.courses.length > 0) {
-          for (const course of seriesItem.courses) {
-            // Add course video URLs
-            if (course.intro_video_url) {
-              course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
-            }
-            if (course.end_video_url) {
-              course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
-            }
+        // if (seriesItem.courses && seriesItem.courses.length > 0) {
+        //   for (const course of seriesItem.courses) {
+        //     // Add course video URLs
+        //     if (course.intro_video_url) {
+        //       course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+        //     }
+        //     if (course.end_video_url) {
+        //       course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+        //     }
 
-            // Add lesson file URLs
-            if (course.lesson_files && course.lesson_files.length > 0) {
-              for (const lessonFile of course.lesson_files) {
-                if (lessonFile.url) {
-                  lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
-                }
-                if (lessonFile.doc) {
-                  lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
-                }
-              }
-            }
-          }
-        }
+        //     // Add lesson file URLs
+        //     if (course.lesson_files && course.lesson_files.length > 0) {
+        //       for (const lessonFile of course.lesson_files) {
+        //         if (lessonFile.url) {
+        //           lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+        //         }
+        //         if (lessonFile.doc) {
+        //           lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+        //         }
+        //       }
+        //     }
+        //   }
+        // }
       }
 
       return {
@@ -448,6 +440,252 @@ export class SeriesService {
         message: 'Failed to fetch series',
         error: error.message,
       };
+    }
+  }
+
+  async findAllCourses(page: number = 1, limit: number = 10, search?: string, series_id?: string): Promise<SeriesResponse<{ courses: any[]; pagination: any }>> {
+    try {
+      const skip = (page - 1) * limit;
+
+      const where: any = {};
+      if (series_id) where.series_id = series_id;
+      if (search) where.title = { contains: search, mode: 'insensitive' as any };
+
+      const [courses, total] = await Promise.all([
+        this.prisma.course.findMany({
+          where,
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            title: true,
+            position: true,
+            price: true,
+            video_length: true,
+            created_at: true,
+            updated_at: true,
+            intro_video_url: true,
+            end_video_url: true,
+            series: { select: { id: true, title: true } },
+          },
+          orderBy: [{ series_id: 'asc' }, { position: 'asc' }],
+        }),
+        this.prisma.course.count({ where }),
+      ]);
+
+      // add course start end video
+      for (const course of courses) {
+        if (course.intro_video_url) {
+          course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+        }
+        if (course.end_video_url) {
+          course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+        }
+      }
+
+      const totalPages = Math.ceil(total / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
+      return {
+        success: true,
+        message: 'Courses retrieved successfully',
+        data: {
+          courses,
+          pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage },
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching courses: ${error.message}`, error.stack);
+      return { success: false, message: 'Failed to fetch courses', error: error.message };
+    }
+  }
+
+  async findAllLessons(
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    series_id?: string,
+    course_id?: string,
+  ): Promise<SeriesResponse<{ lessons: any[]; pagination: any }>> {
+    try {
+      const skip = (page - 1) * limit;
+
+      const where: any = {};
+      if (course_id) where.course_id = course_id;
+      if (series_id) where.course = { series_id };
+      if (search) where.title = { contains: search, mode: 'insensitive' as any };
+
+      const [lessons, total] = await Promise.all([
+        this.prisma.lessonFile.findMany({
+          where,
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            title: true,
+            position: true,
+            kind: true,
+            alt: true,
+            url: true,
+            doc: true,
+            video_length: true,
+            created_at: true,
+            updated_at: true,
+            course: { select: { id: true, title: true, series: { select: { id: true, title: true } } } },
+          },
+          orderBy: [{ course_id: 'asc' }, { position: 'asc' }],
+        }),
+        this.prisma.lessonFile.count({ where }),
+      ]);
+
+      // add file urls to lessons
+      for (const lesson of lessons) {
+        if (lesson.url) {
+          lesson['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lesson.url);
+        }
+        if (lesson.doc) {
+          lesson['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lesson.doc);
+        }
+      }
+
+      const totalPages = Math.ceil(total / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
+      return {
+        success: true,
+        message: 'Lessons retrieved successfully',
+        data: {
+          lessons,
+          pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage },
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching lessons: ${error.message}`, error.stack);
+      return { success: false, message: 'Failed to fetch lessons', error: error.message };
+    }
+  }
+
+  async findOneCourse(id: string): Promise<SeriesResponse<any>> {
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          position: true,
+          price: true,
+          video_length: true,
+          created_at: true,
+          updated_at: true,
+          intro_video_url: true,
+          end_video_url: true,
+          series: { select: { id: true, title: true } },
+          lesson_files: {
+            select: {
+              id: true,
+              title: true,
+              position: true,
+              kind: true,
+              alt: true,
+              url: true,
+              doc: true,
+              video_length: true,
+              created_at: true,
+              updated_at: true,
+            },
+            orderBy: { position: 'asc' },
+          },
+        },
+      });
+
+      if (!course) {
+        return {
+          success: false,
+          message: 'Course not found',
+          error: 'Course not found',
+        };
+      }
+
+      // Add course video URLs
+      if (course.intro_video_url) {
+        course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+      }
+      if (course.end_video_url) {
+        course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+      }
+
+      // Add lesson file URLs
+      for (const lessonFile of course.lesson_files) {
+        if (lessonFile.url) {
+          lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+        }
+        if (lessonFile.doc) {
+          lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+        }
+      }
+
+      return {
+        success: true,
+        message: 'Course retrieved successfully',
+        data: course,
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching course: ${error.message}`, error.stack);
+      return { success: false, message: 'Failed to fetch course', error: error.message };
+    }
+  }
+
+  async findOneLesson(id: string): Promise<SeriesResponse<any>> {
+    try {
+      const lesson = await this.prisma.lessonFile.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          position: true,
+          kind: true,
+          alt: true,
+          url: true,
+          doc: true,
+          video_length: true,
+          created_at: true,
+          updated_at: true,
+          course: {
+            select: {
+              id: true,
+              title: true,
+              series: { select: { id: true, title: true } }
+            }
+          },
+        },
+      });
+
+      if (!lesson) {
+        return {
+          success: false,
+          message: 'Lesson not found',
+          error: 'Lesson not found',
+        };
+      }
+
+      // Add file URLs
+      if (lesson.url) {
+        lesson['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lesson.url);
+      }
+      if (lesson.doc) {
+        lesson['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lesson.doc);
+      }
+
+      return {
+        success: true,
+        message: 'Lesson retrieved successfully',
+        data: lesson,
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching lesson: ${error.message}`, error.stack);
+      return { success: false, message: 'Failed to fetch lesson', error: error.message };
     }
   }
 

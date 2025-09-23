@@ -21,22 +21,4 @@ export class EnrollmentController {
     const user_id = req.user.userId;
     return this.enrollmentService.create(body, user_id);
   }
-
-  @Get()
-  @HttpCode(HttpStatus.OK)
-  async findAll(
-    @Query('page') page: string = '1',
-    @Query('limit') limit: string = '10',
-    @Query('search') search?: string,
-  ) {
-    const pageNum = parseInt(page, 10) || 1;
-    const limitNum = parseInt(limit, 10) || 10;
-    return this.enrollmentService.findAll(pageNum, limitNum, search);
-  }
-
-  @Get(':id/series-summary')
-  @HttpCode(HttpStatus.OK)
-  async findSummary(@Param('id') id: string) {
-    return this.enrollmentService.findSummary(id);
-  }
 }

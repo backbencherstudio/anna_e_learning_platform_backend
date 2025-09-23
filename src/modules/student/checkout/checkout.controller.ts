@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Query, Req, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { CheckoutService } from './checkout.service';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 
@@ -25,11 +25,51 @@ export class CheckoutController {
     return this.checkoutService.list(userId);
   }
 
+  @Get('series')
+  @HttpCode(HttpStatus.OK)
+  async findAll(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('search') search?: string,
+  ) {
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    return this.checkoutService.findAll(pageNum, limitNum, search);
+  }
+
+  @Get(':id/series-summary')
+  @HttpCode(HttpStatus.OK)
+  async findSummary(@Param('id') id: string) {
+    return this.checkoutService.findSummary(id);
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async getOne(@Param('id') id: string, @Req() req: any) {
     const userId = req.user?.userId;
     return this.checkoutService.getOne(userId, id);
+  }
+
+  @Post('apply-code')
+  @HttpCode(HttpStatus.OK)
+  async applyCode(
+    @Body() body: { checkout_id: string; code: string },
+    @Req() req: any,
+  ) {
+    const userId = req.user?.userId;
+    return this.checkoutService.applyCode(userId, body.checkout_id, body.code);
+  }
+
+
+  @Get(':id/applied-code')
+  @HttpCode(HttpStatus.OK)
+  async getAppliedCode(
+    @Param('id') checkoutId: string,
+    @Req() req: any,
+    @Query('code') code?: string,
+  ) {
+    const userId = req.user?.userId;
+    return this.checkoutService.getAppliedCode(userId, checkoutId, code);
   }
 
   @Delete(':id')

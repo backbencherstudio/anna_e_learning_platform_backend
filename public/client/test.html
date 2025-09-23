@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Enrollment Payment</title>
+    <title>Checkout Payment</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="https://js.stripe.com/v3"></script>
     <style>
@@ -64,7 +64,7 @@
     </style>
   </head>
   <body>
-    <h2>Enrollment Payment</h2>
+    <h2>Checkout Payment</h2>
 
     <div class="card">
       <div class="row">
@@ -92,8 +92,8 @@
       </div>
 
       <div class="row">
-        <label>Series ID</label>
-        <input id="seriesId" value="cmfs0iw5q0000wsnobautwqgk" />
+        <label>Checkout ID</label>
+        <input id="checkoutId" placeholder="your-checkout-id" />
       </div>
 
       <div class="row">
@@ -155,15 +155,17 @@
             const apiBase = document.getElementById('apiBase').value.trim();
             const token = document.getElementById('bearer').value.trim();
             const pk = document.getElementById('pk').value.trim();
-            const seriesId = document.getElementById('seriesId').value.trim();
+            const checkoutId = document
+              .getElementById('checkoutId')
+              .value.trim();
             const currency = document.getElementById('currency').value;
 
             if (!pk) {
               log('Missing publishable key', 'error');
               return;
             }
-            if (!seriesId) {
-              log('Missing series_id', 'error');
+            if (!checkoutId) {
+              log('Missing checkout_id', 'error');
               return;
             }
 
@@ -174,7 +176,7 @@
                 'Content-Type': 'application/json',
                 Authorization: 'Bearer ' + token,
               },
-              body: JSON.stringify({ series_id: seriesId, currency }),
+              body: JSON.stringify({ checkout_id: checkoutId, currency }),
             });
 
             const json = await res.json();

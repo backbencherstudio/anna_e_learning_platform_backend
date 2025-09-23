@@ -874,8 +874,9 @@ model Enrollment {
   updated_at DateTime  @default(now())
   deleted_at DateTime?
 
-  user_id   String
-  series_id String
+  user_id     String
+  series_id   String?
+  checkout_id String?
 
   status       EnrollmentStatus @default(ACTIVE)
   enrolled_at  DateTime         @default(now())
@@ -903,7 +904,8 @@ model Enrollment {
 
   // Relations
   user                 User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  series               Series               @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  series               Series?              @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  checkout             Checkout?            @relation(fields: [checkout_id], references: [id], onDelete: Cascade)
   payment_transactions PaymentTransaction[]
 
   @@unique([user_id, series_id])
@@ -999,8 +1001,9 @@ model Checkout {
   user_id String?
   user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
-  series_id String?
-  series    Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  series_id   String?
+  series      Series?      @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
 
   @@map("checkouts")
 }

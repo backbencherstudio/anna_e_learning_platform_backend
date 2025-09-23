@@ -191,6 +191,45 @@ export class SeriesController {
     return this.seriesService.findAll(pageNum, limitNum, search);
   }
 
+  @Get('courses')
+  @HttpCode(HttpStatus.OK)
+  async findAllCourses(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('search') search?: string,
+    @Query('series_id') series_id?: string,
+  ) {
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    return this.seriesService.findAllCourses(pageNum, limitNum, search, series_id);
+  }
+
+  @Get('lessons')
+  @HttpCode(HttpStatus.OK)
+  async findAllLessons(
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('search') search?: string,
+    @Query('series_id') series_id?: string,
+    @Query('course_id') course_id?: string,
+  ) {
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    return this.seriesService.findAllLessons(pageNum, limitNum, search, series_id, course_id);
+  }
+
+  @Get('courses/:id')
+  @HttpCode(HttpStatus.OK)
+  async findOneCourse(@Param('id') id: string) {
+    return this.seriesService.findOneCourse(id);
+  }
+
+  @Get('lessons/:id')
+  @HttpCode(HttpStatus.OK)
+  async findOneLesson(@Param('id') id: string) {
+    return this.seriesService.findOneLesson(id);
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id') id: string) {
