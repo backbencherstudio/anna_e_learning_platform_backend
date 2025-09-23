@@ -234,6 +234,9 @@ export class AuthService {
         type: user.type,
       };
     } catch (error) {
+              console.log('============error.message========================');
+        console.log(error.message);
+        console.log('====================================');
       return {
         success: false,
         message: error.message,

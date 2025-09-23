@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Enrollment Payment</title>
+    <title>Checkout Payment</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="https://js.stripe.com/v3"></script>
     <style>
@@ -64,7 +64,7 @@
     </style>
   </head>
   <body>
-    <h2>Enrollment Payment</h2>
+    <h2>Checkout Payment</h2>
 
     <div class="card">
       <div class="row">
@@ -79,7 +79,7 @@
         <label>Bearer Token</label>
         <input
           id="bearer"
-          value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InN0dWRlbnRAZ21haWwuY29tIiwic3ViIjoiY21ma3hnMDN6MDAwMHdzaWc1d2R6aHRoOSIsImlhdCI6MTc1NzkyODg0OSwiZXhwIjoxNzU4MDE1MjQ5fQ.4diLlSSfxi_JY36p3pjqsfpTROOxhNU961hZaQS108E"
+          value="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InN0dWRlbnRAZ21haWwuY29tIiwic3ViIjoiY21mcW9rdm5lMDAwcndzcDR3b3RlNXlqciIsImlhdCI6MTc1ODI3ODU1MSwiZXhwIjoxNzU4MzY0OTUxfQ.j7m_MEs6XnR9gc1Bw7Av-V04zNOTkAdmXeF5Evskmb8"
         />
       </div>
 
@@ -92,8 +92,8 @@
       </div>
 
       <div class="row">
-        <label>Series ID</label>
-        <input id="seriesId" value="cmfklffzr0001wsp8r8294huy" />
+        <label>Checkout ID</label>
+        <input id="checkoutId" placeholder="your-checkout-id" />
       </div>
 
       <div class="row">
@@ -155,15 +155,17 @@
             const apiBase = document.getElementById('apiBase').value.trim();
             const token = document.getElementById('bearer').value.trim();
             const pk = document.getElementById('pk').value.trim();
-            const seriesId = document.getElementById('seriesId').value.trim();
+            const checkoutId = document
+              .getElementById('checkoutId')
+              .value.trim();
             const currency = document.getElementById('currency').value;
 
             if (!pk) {
               log('Missing publishable key', 'error');
               return;
             }
-            if (!seriesId) {
-              log('Missing series_id', 'error');
+            if (!checkoutId) {
+              log('Missing checkout_id', 'error');
               return;
             }
 
@@ -174,7 +176,7 @@
                 'Content-Type': 'application/json',
                 Authorization: 'Bearer ' + token,
               },
-              body: JSON.stringify({ series_id: seriesId, currency }),
+              body: JSON.stringify({ checkout_id: checkoutId, currency }),
             });
 
             const json = await res.json();

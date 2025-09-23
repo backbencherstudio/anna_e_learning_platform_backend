@@ -105,8 +105,11 @@ model User {
   graded_submissions     AssignmentSubmission[] @relation("SubmissionGrader")
   enrollments            Enrollment[]
   user_progress          UserProgress[]
+  lesson_progress        LessonProgress[]
   certificates           Certificate[]
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
+  checkouts              Checkout[]
+  scholarship_codes      ScholarshipCode[]
 
   @@map("users")
 }
@@ -484,22 +487,25 @@ model Series {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title          String
-  slug           String    @unique
-  summary        String?
-  description    String?
-  visibility     String?   @default("DRAFT")
-  duration       String?
-  start_date     DateTime?
-  end_date       DateTime?
-  thumbnail      String?
-  total_price    Decimal?
-  course_type    String?   @default("regular")
-  note           String?
-  available_site Int?      @default(0) // "all", "web", "mobile", "app"
+  title                String
+  slug                 String    @unique
+  summary              String?
+  description          String?
+  visibility           String?   @default("DRAFT")
+  video_length         String?
+  duration             String?
+  start_date           DateTime?
+  end_date             DateTime?
+  thumbnail            String?
+  total_price          Decimal?
+  course_type          String?   @default("regular")
+  note                 String?
+  available_site       Int?      @default(0) // "all", "web", "mobile", "app"
+  publication_status   String?   @default("DRAFT") // "DRAFT", "SCHEDULED", "PUBLISHED"
+  scheduled_publish_at DateTime?
 
-  language_id String
-  language    Language @relation(fields: [language_id], references: [id])
+  language_id String?
+  language    Language? @relation(fields: [language_id], references: [id])
 
   courses         Course[]
   quizzes         Quiz[]
@@ -508,6 +514,10 @@ model Series {
   user_progress   UserProgress[]
   certificates    Certificate[]
   materials_files MaterialsFile[]
+  student_files   StudentFile[]
+  lesson_progress LessonProgress[]
+  checkouts       Checkout[]
+  ScholarshipCode ScholarshipCode[]
 
   @@map("series")
 }
@@ -526,11 +536,15 @@ model Course {
   position        Int      @default(0)
   intro_video_url String?
   end_video_url   String?
+  video_length    String?
 
-  lesson_files    LessonFile[]
-  quizzes         Quiz[]
-  assignments     Assignment[]
-  materials_files MaterialsFile[]
+  lesson_files     LessonFile[]
+  quizzes          Quiz[]
+  assignments      Assignment[]
+  materials_files  MaterialsFile[]
+  student_files    StudentFile[]
+  lesson_progress  LessonProgress[]
+  scholarshipCodes ScholarshipCode[] @relation("ScholarshipCourse")
 
   @@index([series_id, position])
   @@map("courses")
@@ -542,14 +556,20 @@ model LessonFile {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title    String?
-  url      String
-  kind     String  @default("video") // "image","video","pdf","slides"
-  alt      String?
-  position Int     @default(0)
+  title        String?
+  url          String?
+  doc          String?
+  kind         String  @default("video") // "image","video","pdf","slides"
+  alt          String?
+  position     Int     @default(0)
+  video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
+  is_locked    Boolean @default(true) // Whether this lesson is locked by default
 
   course_id String?
   course    Course? @relation(fields: [course_id], references: [id])
+
+  // Relations
+  user_progress LessonProgress[]
 
   @@index([course_id])
   @@map("lesson_files")
@@ -561,11 +581,14 @@ model MaterialsFile {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title       String
-  description String?
-  url         String?
-  type        String?
-  position    Int     @default(0)
+  title        String
+  description  String?
+  lecture_type String?
+  url          String?
+  type         String?
+  kind         String?
+  alt          String?
+  position     Int     @default(0)
 
   series_id String?
   series    Series? @relation(fields: [series_id], references: [id])
@@ -574,7 +597,6 @@ model MaterialsFile {
   course    Course? @relation(fields: [course_id], references: [id])
 }
 
-
 model TeacherSection {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
@@ -582,16 +604,38 @@ model TeacherSection {
   deleted_at DateTime?
 
   section_type String
-  title String
-  description String?
-  duration String?
+  title        String
+  description  String?
+  duration     String?
   release_date DateTime?
-  position Int @default(0)
-  status String @default("published") // scheduled, released, archived
-  view_count Int @default(0)
-  file_url String?
+  position     Int       @default(0)
+  status       String    @default("published") // scheduled, released, archived
+  view_count   Int       @default(0)
+  file_url     String?
 
   @@map("teacher_sections")
+}
+
+model StudentFile {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  type         String?
+  url          String?
+  kind         String?
+  alt          String?
+  week_number  Int?
+  section_type String
+
+  series_id String
+  series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  course_id String
+  course    Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  @@map("student_files")
 }
 
 // ---------- Assessment: Quiz ----------
@@ -611,6 +655,10 @@ model Quiz {
   is_published Boolean   @default(false)
   published_at DateTime?
   metadata     Json?
+
+  // Publication scheduling fields
+  publication_status   String    @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHED
+  scheduled_publish_at DateTime?
 
   series      Series           @relation(fields: [series_id], references: [id], onDelete: Cascade)
   course      Course?          @relation(fields: [course_id], references: [id], onDelete: SetNull)
@@ -664,10 +712,9 @@ model QuizSubmission {
   deleted_at DateTime?
 
   quiz_id      String
-  user_id      String
+  student_id   String
   status       QuizAttemptStatus @default(IN_PROGRESS)
-  score        Int               @default(0)
-  total_marks  Int               @default(0)
+  total_grade  Int               @default(0)
   percentage   Float             @default(0.0)
   time_taken   Int? // Time taken in seconds
   started_at   DateTime          @default(now())
@@ -677,12 +724,12 @@ model QuizSubmission {
   metadata     Json? // Additional data like time limits, attempts allowed, etc.
 
   quiz    Quiz                   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
-  user    User                   @relation("QuizSubmission", fields: [user_id], references: [id], onDelete: Cascade)
+  student User                   @relation("QuizSubmission", fields: [student_id], references: [id], onDelete: Cascade)
   answers QuizSubmissionAnswer[]
 
-  @@unique([quiz_id, user_id]) // One submission per user per quiz
+  @@unique([quiz_id, student_id]) // One submission per user per quiz
   @@index([quiz_id, status])
-  @@index([user_id, status])
+  @@index([student_id, status])
   @@index([submitted_at])
   @@map("quiz_submissions")
 }
@@ -726,6 +773,10 @@ model Assignment {
   is_published Boolean   @default(false)
   published_at DateTime?
 
+  // Publication scheduling fields
+  publication_status   String    @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHED
+  scheduled_publish_at DateTime?
+
   series      Series                 @relation(fields: [series_id], references: [id], onDelete: Cascade)
   course      Course?                @relation(fields: [course_id], references: [id], onDelete: SetNull)
   questions   AssignmentQuestion[]
@@ -757,20 +808,20 @@ model AssignmentSubmission {
   updated_at DateTime @updatedAt
 
   assignment_id    String
-  user_id          String
+  student_id       String
   status           SubmissionStatus @default(DRAFT)
-  total_marks      Int              @default(0)
+  total_grade      Int              @default(0)
   overall_feedback String?
   graded_by_id     String?
   graded_at        DateTime?
 
   assignment Assignment             @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
-  learner    User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  student    User                   @relation(fields: [student_id], references: [id], onDelete: Cascade)
   graded_by  User?                  @relation("SubmissionGrader", fields: [graded_by_id], references: [id], onDelete: SetNull)
   answers    AssignmentAnswer[]
   files      SubmissionAttachment[]
 
-  @@unique([assignment_id, user_id]) // one submission per learner
+  @@unique([assignment_id, student_id])
   @@index([assignment_id, status])
   @@map("assignment_submissions")
 }
@@ -822,8 +873,9 @@ model Enrollment {
   updated_at DateTime  @default(now())
   deleted_at DateTime?
 
-  user_id   String
-  series_id String
+  user_id     String
+  series_id   String?
+  checkout_id String?
 
   status       EnrollmentStatus @default(ACTIVE)
   enrolled_at  DateTime         @default(now())
@@ -851,7 +903,8 @@ model Enrollment {
 
   // Relations
   user                 User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  series               Series               @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  series               Series?              @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  checkout             Checkout?            @relation(fields: [checkout_id], references: [id], onDelete: Cascade)
   payment_transactions PaymentTransaction[]
 
   @@unique([user_id, series_id])
@@ -881,6 +934,38 @@ model UserProgress {
   @@map("user_progress")
 }
 
+model LessonProgress {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  user_id   String
+  lesson_id String
+  course_id String
+  series_id String
+
+  // Progress tracking
+  is_completed          Boolean   @default(false)
+  is_viewed             Boolean   @default(false)
+  completed_at          DateTime?
+  viewed_at             DateTime?
+  time_spent            Int? // Time spent in seconds
+  last_position         Int? // Video/audio position
+  completion_percentage Float?    @default(0) // 0-100
+
+  // Relations
+  user   User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  lesson LessonFile @relation(fields: [lesson_id], references: [id], onDelete: Cascade)
+  course Course     @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  series Series     @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, lesson_id])
+  @@index([user_id, course_id])
+  @@index([user_id, series_id])
+  @@map("lesson_progress")
+}
+
 // ===== CERTIFICATES =====
 model Certificate {
   id         String    @id @default(cuid())
@@ -902,4 +987,48 @@ model Certificate {
 
   @@unique([user_id, series_id])
   @@map("certificates")
+}
+
+model Checkout {
+  id          String    @id @default(cuid())
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @default(now())
+  deleted_at  DateTime?
+  status      String?
+  total_price Decimal?
+
+  user_id String?
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  series_id   String?
+  series      Series?      @relation(fields: [series_id], references: [id], onDelete: Cascade)
+  enrollments Enrollment[]
+
+  @@map("checkouts")
+}
+
+model ScholarshipCode {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+  status     Int?      @default(1) @db.SmallInt
+
+  code      String?
+  code_type String? @default("code") // code, percentage
+
+  // the human readable scholarship name
+  name             String?
+  // The description of the scholarship - Not necessary 
+  description      String? @db.Text
+  scholarship_type String? @default("free_student")
+  series_id        String?
+  series           Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  student_id String?
+  student    User?   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  courses Course[] @relation("ScholarshipCourse")
+
+  @@map("scholarship_codes")
 }

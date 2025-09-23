@@ -1,29 +1,40 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { StripePayment } from '../../../common/lib/Payment/stripe/StripePayment';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
+import { SeriesService } from '../series/series.service';
+
 
 @Injectable()
 export class EnrollmentService {
-    constructor(private readonly prisma: PrismaService) { }
+    private readonly logger = new Logger(EnrollmentService.name);
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly seriesService: SeriesService
+    ) { }
 
     async create(body: CreateEnrollmentDto, userId: string) {
-        const { series_id, amount, currency = 'usd' } = body;
+        const { checkout_id, amount, currency = 'usd' } = body;
         try {
             const user = await this.prisma.user.findUnique({ where: { id: userId } });
             if (!user) throw new BadRequestException('User not found');
 
-            const series = await this.prisma.series.findUnique({ where: { id: series_id } });
+            const checkout = await this.prisma.checkout.findUnique({ where: { id: checkout_id } });
+            if (!checkout) throw new BadRequestException('Checkout not found');
+
+            const series = await this.prisma.series.findUnique({ where: { id: checkout.series_id } });
             if (!series) throw new BadRequestException('Series not found');
 
+            const finalAmount = Number(checkout.total_price);
+
             // Create or get enrollment
-            let enrollment = await this.prisma.enrollment.findFirst({ where: { user_id: userId, series_id } });
+            let enrollment = await this.prisma.enrollment.findFirst({ where: { user_id: userId, series_id: series.id } });
             if (!enrollment) {
                 enrollment = await this.prisma.enrollment.create({
                     data: {
                         user_id: userId,
-                        series_id: series_id,
+                        series_id: checkout.series_id,
                         status: 'ACTIVE',
                         payment_status: 'pending',
                     },
@@ -44,13 +55,13 @@ export class EnrollmentService {
 
             // Create PaymentIntent
             const paymentIntent = await StripePayment.createPaymentIntent({
-                amount: Number(series.total_price),
+                amount: finalAmount,
                 currency,
                 customer_id: customerId!,
                 metadata: {
                     enrollmentId: enrollment.id,
                     userId: user.id,
-                    series_id,
+                    series_id: checkout.series_id,
                 },
             });
 
@@ -65,15 +76,20 @@ export class EnrollmentService {
             // Persist transaction and keep enrollment pending
             await TransactionRepository.createTransaction({
                 enrollment_id: enrollment.id,
-                amount: Number(series.total_price),
+                amount: finalAmount,
                 currency,
                 reference_number: paymentIntent.id,
                 status: 'pending',
             });
 
-            await this.prisma.enrollment.update({ where: { id: enrollment.id }, data: { payment_status: 'pending' } });
+            // decrise available site
+            await this.prisma.series.update({ where: { id: checkout.series_id }, data: { available_site: series.available_site - 1 } });
 
             await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
+
+            await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
+
+            await this.prisma.checkout.delete({ where: { id: checkout_id } });
 
             return {
                 success: true,
@@ -82,7 +98,7 @@ export class EnrollmentService {
                     client_secret: paymentIntent.client_secret,
                     enrollment_id: enrollment.id,
                     payment_intent_id: paymentIntent.id,
-                    amount: Number(series.total_price),
+                    amount: finalAmount,
                     currency,
                     status: 'pending',
                 },
@@ -92,6 +108,7 @@ export class EnrollmentService {
             throw new BadRequestException(message);
         }
     }
+
 
     /**
 * Handle successful payment (called by webhook)
@@ -120,29 +137,4 @@ export class EnrollmentService {
         });
     }
 
-    /**
-     * Handle failed payment (called by webhook)
-     */
-    async handlePaymentFailed(paymentIntentId: string) {
-        // Find enrollment by payment reference
-        const enrollment = await this.prisma.enrollment.findFirst({
-            where: {
-                payment_reference_number: paymentIntentId,
-            },
-        });
-
-        if (!enrollment) {
-            console.error('Enrollment not found for payment intent:', paymentIntentId);
-            return;
-        }
-
-        // Update subscription status to failed
-        await this.prisma.enrollment.update({
-            where: { id: enrollment.id },
-            data: {
-                status: 'CANCELLED',
-                payment_status: 'failed',
-            },
-        });
-    }
 }

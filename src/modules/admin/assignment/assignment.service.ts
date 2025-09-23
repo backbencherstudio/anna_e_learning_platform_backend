@@ -5,12 +5,16 @@ import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { AssignmentResponse } from './interfaces/assignment-response.interface';
 import { Assignment, AssignmentQuestion } from '@prisma/client';
 import { DateHelper } from 'src/common/helper/date.helper';
+import { AssignmentPublishService } from '../../queue/assignment-publish.service';
 
 @Injectable()
 export class AssignmentService {
   private readonly logger = new Logger(AssignmentService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assignmentPublishService: AssignmentPublishService,
+  ) { }
 
   /**
    * Create a new assignment with questions
@@ -37,6 +41,21 @@ export class AssignmentService {
 
       // Create assignment with questions in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
+        // Determine publication status and scheduling
+        const now = new Date();
+        const publishAt = createAssignmentDto.published_at ? new Date(createAssignmentDto.published_at) : undefined;
+        const shouldPublishImmediately = createAssignmentDto.is_published || (publishAt && publishAt <= now);
+
+        let publicationStatus = 'DRAFT';
+        let scheduledPublishAt = null;
+
+        if (shouldPublishImmediately) {
+          publicationStatus = 'PUBLISHED';
+        } else if (publishAt && publishAt > now) {
+          publicationStatus = 'SCHEDULED';
+          scheduledPublishAt = publishAt;
+        }
+
         // Create the assignment
         const assignment = await prisma.assignment.create({
           data: {
@@ -44,8 +63,10 @@ export class AssignmentService {
             description: createAssignmentDto.description,
             total_marks: totalMarks,
             due_at: createAssignmentDto.due_at ? new Date(createAssignmentDto.due_at) : undefined,
-            is_published: createAssignmentDto.is_published || false,
-            published_at: createAssignmentDto.published_at ? new Date(createAssignmentDto.published_at) : undefined,
+            is_published: shouldPublishImmediately,
+            published_at: shouldPublishImmediately ? now : undefined,
+            publication_status: publicationStatus,
+            scheduled_publish_at: scheduledPublishAt,
             series_id: createAssignmentDto.series_id,
             course_id: createAssignmentDto.course_id,
           },
@@ -69,6 +90,17 @@ export class AssignmentService {
 
         return assignment;
       });
+
+      // Schedule publication if needed (outside transaction)
+      if (result.publication_status === 'SCHEDULED' && result.scheduled_publish_at) {
+        try {
+          await this.assignmentPublishService.scheduleAssignmentPublication(result.id, result.scheduled_publish_at);
+          this.logger.log(`Assignment ${result.id} scheduled for publication at ${result.scheduled_publish_at.toISOString()}`);
+        } catch (error) {
+          this.logger.error(`Failed to schedule assignment publication for ${result.id}: ${error.message}`, error.stack);
+          // Don't throw error here as the assignment was created successfully
+        }
+      }
 
       // Fetch the complete assignment with relations
       const assignmentWithRelations = await this.prisma.assignment.findUnique({
@@ -152,7 +184,7 @@ export class AssignmentService {
             select: {
               id: true,
               status: true,
-              total_marks: true,
+              total_grade: true,
               overall_feedback: true,
               graded_at: true,
               graded_by_id: true,
@@ -238,7 +270,7 @@ export class AssignmentService {
         const averageScore = gradedCount > 0
           ? assignment.submissions
             .filter(s => s.status === 'GRADED')
-            .reduce((sum, s) => sum + (s.total_marks || 0), 0) / gradedCount
+            .reduce((sum, s) => sum + (s.total_grade || 0), 0) / gradedCount
           : 0;
 
         return {
@@ -460,6 +492,30 @@ export class AssignmentService {
         if (updateAssignmentDto.due_at) updateData.due_at = new Date(updateAssignmentDto.due_at);
         if (updateAssignmentDto.published_at) updateData.published_at = new Date(updateAssignmentDto.published_at);
 
+        // Handle publication scheduling
+        const now = new Date();
+        const publishAt = updateAssignmentDto.published_at ? new Date(updateAssignmentDto.published_at) : undefined;
+        const shouldPublishImmediately = updateAssignmentDto.is_published || (publishAt && publishAt <= now);
+
+        let publicationStatus = 'DRAFT';
+        let scheduledPublishAt = null;
+
+        if (shouldPublishImmediately) {
+          publicationStatus = 'PUBLISHED';
+          updateData.published_at = now;
+        } else if (publishAt && publishAt > now) {
+          publicationStatus = 'SCHEDULED';
+          scheduledPublishAt = publishAt;
+        } else if (updateAssignmentDto.published_at === null) {
+          // If published_at is explicitly set to null, cancel scheduling
+          publicationStatus = 'DRAFT';
+          scheduledPublishAt = null;
+        }
+
+        updateData.publication_status = publicationStatus;
+        updateData.scheduled_publish_at = scheduledPublishAt;
+        updateData.is_published = shouldPublishImmediately;
+
         // Remove questions from updateData as we'll handle them separately
         delete updateData.questions;
 
@@ -496,6 +552,23 @@ export class AssignmentService {
 
         return assignment;
       });
+
+      // Handle queue scheduling after transaction is committed
+      if (updatedAssignment.publication_status === 'SCHEDULED' && updatedAssignment.scheduled_publish_at) {
+        try {
+          await this.assignmentPublishService.scheduleAssignmentPublication(id, updatedAssignment.scheduled_publish_at);
+          this.logger.log(`Assignment ${id} scheduled for publication at ${updatedAssignment.scheduled_publish_at.toISOString()}`);
+        } catch (error) {
+          this.logger.error(`Failed to schedule assignment publication for ${id}: ${error.message}`, error.stack);
+        }
+      } else if (updatedAssignment.publication_status === 'DRAFT' || updatedAssignment.publication_status === 'PUBLISHED') {
+        try {
+          await this.assignmentPublishService.cancelScheduledPublication(id);
+          this.logger.log(`Cancelled scheduled publication for assignment ${id}`);
+        } catch (error) {
+          this.logger.error(`Failed to cancel scheduled publication for assignment ${id}: ${error.message}`, error.stack);
+        }
+      }
 
       // Fetch the complete updated assignment with relations
       const assignmentWithRelations = await this.prisma.assignment.findUnique({
@@ -568,6 +641,107 @@ export class AssignmentService {
       return {
         success: false,
         message: 'Failed to delete assignment',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Get assignment publication status
+   */
+  async getAssignmentPublicationStatus(id: string): Promise<AssignmentResponse<any>> {
+    try {
+      this.logger.log(`Getting publication status for assignment: ${id}`);
+
+      // Check if assignment exists
+      const assignment = await this.prisma.assignment.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          publication_status: true,
+          scheduled_publish_at: true,
+          is_published: true,
+          published_at: true,
+        },
+      });
+
+      if (!assignment) {
+        throw new NotFoundException(`Assignment with ID ${id} not found`);
+      }
+
+      // Get queue status
+      const queueStatus = await this.assignmentPublishService.getAssignmentPublicationStatus(id);
+
+      return {
+        success: true,
+        message: 'Assignment publication status retrieved successfully',
+        data: {
+          ...assignment,
+          queue_status: queueStatus,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error getting assignment publication status ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to get assignment publication status',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Cancel scheduled assignment publication
+   */
+  async cancelScheduledPublication(id: string): Promise<AssignmentResponse<any>> {
+    try {
+      this.logger.log(`Cancelling scheduled publication for assignment: ${id}`);
+
+      // Check if assignment exists
+      const existingAssignment = await this.prisma.assignment.findUnique({
+        where: { id },
+        select: { id: true, title: true, publication_status: true },
+      });
+
+      if (!existingAssignment) {
+        throw new NotFoundException(`Assignment with ID ${id} not found`);
+      }
+
+      // Cancel scheduled publication
+      await this.assignmentPublishService.cancelScheduledPublication(id);
+
+      // Update assignment status to DRAFT
+      const updatedAssignment = await this.prisma.assignment.update({
+        where: { id },
+        data: {
+          publication_status: 'DRAFT',
+          scheduled_publish_at: null,
+        },
+      });
+
+      this.logger.log(`Cancelled scheduled publication for assignment ${id}`);
+
+      return {
+        success: true,
+        message: `Scheduled publication cancelled for assignment "${updatedAssignment.title}"`,
+        data: updatedAssignment,
+      };
+    } catch (error) {
+      this.logger.error(`Error cancelling scheduled publication for assignment ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to cancel scheduled publication',
         error: error.message,
       };
     }

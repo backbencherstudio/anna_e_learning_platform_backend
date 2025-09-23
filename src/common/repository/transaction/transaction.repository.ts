@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { SeriesService } from 'src/modules/admin/series/series.service';
 
 const prisma = new PrismaClient();
 
@@ -79,23 +80,27 @@ export class TransactionRepository {
       order_data['payment_raw_status'] = raw_status;
     }
 
-    const paymentTransaction = await prisma.paymentTransaction.findMany({
+    const paymentTransaction = await prisma.paymentTransaction.findFirst({
       where: {
         reference_number: reference_number,
       },
     });
 
-    // update booking status
-    // if (paymentTransaction.length > 0) {
-    //   await prisma.order.update({
-    //     where: {
-    //       id: paymentTransaction[0].order_id,
-    //     },
-    //     data: {
-    //       ...order_data,
-    //     },
-    //   });
-    // }
+    console.log(paid_amount, paid_currency, raw_status);
+
+    // Update enrollment status to active
+    const enrollment = await prisma.enrollment.update({
+      where: { id: paymentTransaction.enrollment_id },
+      data: {
+        status: 'ACTIVE',
+        payment_status: 'completed',
+        paid_amount: paid_amount,
+        paid_currency: paid_currency,
+        payment_raw_status: raw_status,
+      },
+    });
+
+    console.log('enrollment', enrollment);
 
     return await prisma.paymentTransaction.updateMany({
       where: {

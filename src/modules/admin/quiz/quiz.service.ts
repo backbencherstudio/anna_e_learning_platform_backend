@@ -5,12 +5,16 @@ import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { QuizResponse } from './interfaces/quiz-response.interface';
 import { Quiz, QuizQuestion, QuestionAnswer } from '@prisma/client';
 import { DateHelper } from 'src/common/helper/date.helper';
+import { QuizPublishService } from '../../queue/quiz-publish.service';
 
 @Injectable()
 export class QuizService {
   private readonly logger = new Logger(QuizService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly quizPublishService: QuizPublishService,
+  ) { }
 
   /**
    * Get quiz dashboard data - published and unpublished quizzes with submission stats
@@ -71,7 +75,7 @@ export class QuizService {
             select: {
               id: true,
               status: true,
-              score: true,
+              total_grade: true,
               percentage: true,
             },
           },
@@ -216,6 +220,21 @@ export class QuizService {
 
       // Create quiz with questions and answers in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
+        // Determine publication status and scheduling
+        const now = new Date();
+        const publishAt = createQuizDto.published_at ? new Date(createQuizDto.published_at) : undefined;
+        const shouldPublishImmediately = createQuizDto.is_published || (publishAt && publishAt <= now);
+
+        let publicationStatus = 'DRAFT';
+        let scheduledPublishAt = null;
+
+        if (shouldPublishImmediately) {
+          publicationStatus = 'PUBLISHED';
+        } else if (publishAt && publishAt > now) {
+          publicationStatus = 'SCHEDULED';
+          scheduledPublishAt = publishAt;
+        }
+
         // Create the quiz
         const quiz = await prisma.quiz.create({
           data: {
@@ -223,8 +242,10 @@ export class QuizService {
             instructions: createQuizDto.instructions,
             total_marks: totalMarks,
             due_at: createQuizDto.due_at ? new Date(createQuizDto.due_at) : undefined,
-            is_published: createQuizDto.is_published || false,
-            published_at: createQuizDto.published_at ? new Date(createQuizDto.published_at) : undefined,
+            is_published: shouldPublishImmediately,
+            published_at: shouldPublishImmediately ? now : undefined,
+            publication_status: publicationStatus,
+            scheduled_publish_at: scheduledPublishAt,
             metadata: createQuizDto.metadata,
             series_id: createQuizDto.series_id,
             course_id: createQuizDto.course_id,
@@ -263,6 +284,17 @@ export class QuizService {
 
         return quiz;
       });
+
+      // Schedule publication if needed (outside transaction)
+      if (result.publication_status === 'SCHEDULED' && result.scheduled_publish_at) {
+        try {
+          await this.quizPublishService.scheduleQuizPublication(result.id, result.scheduled_publish_at);
+          this.logger.log(`Quiz ${result.id} scheduled for publication at ${result.scheduled_publish_at.toISOString()}`);
+        } catch (error) {
+          this.logger.error(`Failed to schedule quiz publication for ${result.id}: ${error.message}`, error.stack);
+          // Don't throw error here as the quiz was created successfully
+        }
+      }
 
       // Fetch the complete quiz with relations
       const quizWithRelations = await this.prisma.quiz.findUnique({
@@ -468,6 +500,30 @@ export class QuizService {
         if (updateQuizDto.due_at) updateData.due_at = new Date(updateQuizDto.due_at);
         if (updateQuizDto.published_at) updateData.published_at = new Date(updateQuizDto.published_at);
 
+        // Handle publication scheduling
+        const now = new Date();
+        const publishAt = updateQuizDto.published_at ? new Date(updateQuizDto.published_at) : undefined;
+        const shouldPublishImmediately = updateQuizDto.is_published || (publishAt && publishAt <= now);
+
+        let publicationStatus = 'DRAFT';
+        let scheduledPublishAt = null;
+
+        if (shouldPublishImmediately) {
+          publicationStatus = 'PUBLISHED';
+          updateData.published_at = now;
+        } else if (publishAt && publishAt > now) {
+          publicationStatus = 'SCHEDULED';
+          scheduledPublishAt = publishAt;
+        } else if (updateQuizDto.published_at === null) {
+          // If published_at is explicitly set to null, cancel scheduling
+          publicationStatus = 'DRAFT';
+          scheduledPublishAt = null;
+        }
+
+        updateData.publication_status = publicationStatus;
+        updateData.scheduled_publish_at = scheduledPublishAt;
+        updateData.is_published = shouldPublishImmediately;
+
         // Remove questions from updateData as we'll handle them separately
         delete updateData.questions;
 
@@ -517,6 +573,23 @@ export class QuizService {
 
         return quiz;
       });
+
+      // Handle queue scheduling after transaction is committed
+      if (updatedQuiz.publication_status === 'SCHEDULED' && updatedQuiz.scheduled_publish_at) {
+        try {
+          await this.quizPublishService.scheduleQuizPublication(id, updatedQuiz.scheduled_publish_at);
+          this.logger.log(`Quiz ${id} scheduled for publication at ${updatedQuiz.scheduled_publish_at.toISOString()}`);
+        } catch (error) {
+          this.logger.error(`Failed to schedule quiz publication for ${id}: ${error.message}`, error.stack);
+        }
+      } else if (updatedQuiz.publication_status === 'DRAFT' || updatedQuiz.publication_status === 'PUBLISHED') {
+        try {
+          await this.quizPublishService.cancelScheduledPublication(id);
+          this.logger.log(`Cancelled scheduled publication for quiz ${id}`);
+        } catch (error) {
+          this.logger.error(`Failed to cancel scheduled publication for quiz ${id}: ${error.message}`, error.stack);
+        }
+      }
 
       // Fetch the complete updated quiz with relations
       const quizWithRelations = await this.prisma.quiz.findUnique({
@@ -594,6 +667,108 @@ export class QuizService {
       return {
         success: false,
         message: 'Failed to delete quiz',
+        error: error.message,
+      };
+    }
+  }
+
+
+  /**
+   * Get quiz publication status
+   */
+  async getQuizPublicationStatus(id: string): Promise<QuizResponse<any>> {
+    try {
+      this.logger.log(`Getting publication status for quiz: ${id}`);
+
+      // Check if quiz exists
+      const quiz = await this.prisma.quiz.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          title: true,
+          publication_status: true,
+          scheduled_publish_at: true,
+          is_published: true,
+          published_at: true,
+        },
+      });
+
+      if (!quiz) {
+        throw new NotFoundException(`Quiz with ID ${id} not found`);
+      }
+
+      // Get queue status
+      const queueStatus = await this.quizPublishService.getQuizPublicationStatus(id);
+
+      return {
+        success: true,
+        message: 'Quiz publication status retrieved successfully',
+        data: {
+          ...quiz,
+          queue_status: queueStatus,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error getting quiz publication status ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to get quiz publication status',
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Cancel scheduled quiz publication
+   */
+  async cancelScheduledPublication(id: string): Promise<QuizResponse<any>> {
+    try {
+      this.logger.log(`Cancelling scheduled publication for quiz: ${id}`);
+
+      // Check if quiz exists
+      const existingQuiz = await this.prisma.quiz.findUnique({
+        where: { id },
+        select: { id: true, title: true, publication_status: true },
+      });
+
+      if (!existingQuiz) {
+        throw new NotFoundException(`Quiz with ID ${id} not found`);
+      }
+
+      // Cancel scheduled publication
+      await this.quizPublishService.cancelScheduledPublication(id);
+
+      // Update quiz status to DRAFT
+      const updatedQuiz = await this.prisma.quiz.update({
+        where: { id },
+        data: {
+          publication_status: 'DRAFT',
+          scheduled_publish_at: null,
+        },
+      });
+
+      this.logger.log(`Cancelled scheduled publication for quiz ${id}`);
+
+      return {
+        success: true,
+        message: `Scheduled publication cancelled for quiz "${updatedQuiz.title}"`,
+        data: updatedQuiz,
+      };
+    } catch (error) {
+      this.logger.error(`Error cancelling scheduled publication for quiz ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to cancel scheduled publication',
         error: error.message,
       };
     }

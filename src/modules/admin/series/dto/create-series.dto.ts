@@ -25,6 +25,9 @@ export class CreateSeriesDto {
     @IsOptional() @IsString()
     duration?: string;
 
+    @IsOptional() @IsString()
+    video_length?: string;
+
     @IsOptional() @IsDateString()
     start_date?: string;
 

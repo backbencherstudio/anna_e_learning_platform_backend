@@ -66,6 +66,7 @@ export class MaterialsService {
         data: {
           title: createMaterialDto.title,
           description: createMaterialDto.description,
+          lecture_type: createMaterialDto.lecture_type,
           url: fileUrl,
           type: createMaterialDto.type,
           position: createMaterialDto.position || 0,

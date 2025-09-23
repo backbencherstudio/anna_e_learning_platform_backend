@@ -4,6 +4,7 @@ import { MiddlewareConsumer, Module } from '@nestjs/common';
 // import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { BullModule } from '@nestjs/bullmq';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 
 // internal imports
 import appConfig from './config/app.config';
@@ -39,6 +40,7 @@ import { StudentModule } from './modules/student/student.module';
       //   port: +appConfig().redis.port,
       // },
     }),
+    EventEmitterModule.forRoot(),
     // disabling throttling for dev
     // ThrottlerModule.forRoot([
     //   {
