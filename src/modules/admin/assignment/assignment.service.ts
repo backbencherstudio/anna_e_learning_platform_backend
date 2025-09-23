@@ -184,7 +184,7 @@ export class AssignmentService {
             select: {
               id: true,
               status: true,
-              total_marks: true,
+              total_grade: true,
               overall_feedback: true,
               graded_at: true,
               graded_by_id: true,
@@ -270,7 +270,7 @@ export class AssignmentService {
         const averageScore = gradedCount > 0
           ? assignment.submissions
             .filter(s => s.status === 'GRADED')
-            .reduce((sum, s) => sum + (s.total_marks || 0), 0) / gradedCount
+            .reduce((sum, s) => sum + (s.total_grade || 0), 0) / gradedCount
           : 0;
 
         return {

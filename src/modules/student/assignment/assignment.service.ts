@@ -65,6 +65,7 @@ export class AssignmentService {
           description: true,
           published_at: true,
           publication_status: true,
+          total_marks: true,
           created_at: true,
           updated_at: true,
           series: { select: { id: true, title: true } },
@@ -96,6 +97,7 @@ export class AssignmentService {
         description: true,
         published_at: true,
         publication_status: true,
+        total_marks: true,
         created_at: true,
         updated_at: true,
         series_id: true,
@@ -126,6 +128,13 @@ export class AssignmentService {
     // ensure assignment exists and student enrolled
     const assignment = await this.prisma.assignment.findUnique({ where: { id: assignmentId }, select: { id: true, series_id: true } });
     if (!assignment) throw new NotFoundException('Assignment not found');
+
+    // check user submitted assignment
+    const submittedAssignment = await this.prisma.assignmentSubmission.findFirst({
+      where: { assignment_id: assignmentId, student_id: studentId },
+      select: { id: true },
+    });
+    if (submittedAssignment) throw new NotFoundException('Assignment already submitted');
 
     const student = await this.prisma.user.findUnique({ where: { id: studentId }, select: { id: true } });
     if (!student) throw new NotFoundException('Student not found');
@@ -197,7 +206,7 @@ export class AssignmentService {
       select: {
         id: true,
         status: true,
-        total_marks: true,
+        total_grade: true,
         overall_feedback: true,
         graded_by_id: true,
         graded_at: true,

@@ -5,6 +5,7 @@ import { StudentFileModule } from './student-file/student-file.module';
 import { MaterialsModule } from './materials/materials.module';
 import { CheckoutModule } from './checkout/checkout.module';
 import { AssignmentModule } from './assignment/assignment.module';
+import { QuizModule } from './quiz/quiz.module';
 ;
 
 @Module({
@@ -14,7 +15,8 @@ import { AssignmentModule } from './assignment/assignment.module';
         StudentFileModule,
         MaterialsModule,
         CheckoutModule,
-        AssignmentModule
+        AssignmentModule,
+        QuizModule
     ],
 })
 export class StudentModule { }

@@ -712,10 +712,9 @@ model QuizSubmission {
   deleted_at DateTime?
 
   quiz_id      String
-  user_id      String
+  student_id   String
   status       QuizAttemptStatus @default(IN_PROGRESS)
-  score        Int               @default(0)
-  total_marks  Int               @default(0)
+  total_grade  Int               @default(0)
   percentage   Float             @default(0.0)
   time_taken   Int? // Time taken in seconds
   started_at   DateTime          @default(now())
@@ -725,12 +724,12 @@ model QuizSubmission {
   metadata     Json? // Additional data like time limits, attempts allowed, etc.
 
   quiz    Quiz                   @relation(fields: [quiz_id], references: [id], onDelete: Cascade)
-  user    User                   @relation("QuizSubmission", fields: [user_id], references: [id], onDelete: Cascade)
+  student User                   @relation("QuizSubmission", fields: [student_id], references: [id], onDelete: Cascade)
   answers QuizSubmissionAnswer[]
 
-  @@unique([quiz_id, user_id]) // One submission per user per quiz
+  @@unique([quiz_id, student_id]) // One submission per user per quiz
   @@index([quiz_id, status])
-  @@index([user_id, status])
+  @@index([student_id, status])
   @@index([submitted_at])
   @@map("quiz_submissions")
 }
@@ -811,7 +810,7 @@ model AssignmentSubmission {
   assignment_id    String
   student_id       String
   status           SubmissionStatus @default(DRAFT)
-  total_marks      Int              @default(0)
+  total_grade      Int              @default(0)
   overall_feedback String?
   graded_by_id     String?
   graded_at        DateTime?

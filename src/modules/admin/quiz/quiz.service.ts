@@ -75,7 +75,7 @@ export class QuizService {
             select: {
               id: true,
               status: true,
-              score: true,
+              total_grade: true,
               percentage: true,
             },
           },
