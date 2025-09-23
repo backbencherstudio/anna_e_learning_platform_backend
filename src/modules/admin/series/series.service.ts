@@ -1094,6 +1094,103 @@ export class SeriesService {
     }
   }
 
+  async removeCourse(id: string): Promise<SeriesResponse<{ id: string }>> {
+    try {
+      const existingCourse = await this.prisma.course.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          intro_video_url: true,
+          end_video_url: true,
+          lesson_files: {
+            select: { id: true, url: true, doc: true },
+          },
+        },
+      });
+
+      if (!existingCourse) {
+        throw new NotFoundException(`Course with ID ${id} not found`);
+      }
+
+      try {
+        if (existingCourse.intro_video_url) {
+          await SojebStorage.delete(appConfig().storageUrl.module_file + existingCourse.intro_video_url);
+        }
+        if (existingCourse.end_video_url) {
+          await SojebStorage.delete(appConfig().storageUrl.module_file + existingCourse.end_video_url);
+        }
+        if (existingCourse.lesson_files && existingCourse.lesson_files.length > 0) {
+          for (const lf of existingCourse.lesson_files) {
+            if (lf.url) {
+              try {
+                await SojebStorage.delete(appConfig().storageUrl.lesson_file + lf.url);
+              } catch (err) {
+                this.logger.warn(`Failed to delete lesson video file: ${err.message}`);
+              }
+            }
+            if (lf.doc) {
+              try {
+                await SojebStorage.delete(appConfig().storageUrl.doc_file + lf.doc);
+              } catch (err) {
+                this.logger.warn(`Failed to delete lesson doc file: ${err.message}`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to delete some course files: ${err.message}`);
+      }
+
+      await this.prisma.course.delete({ where: { id } });
+
+      return {
+        success: true,
+        message: 'Course deleted successfully',
+        data: { id },
+      };
+    } catch (error) {
+      this.logger.error(`Error deleting course ${id}: ${error.message}`, error.stack);
+      if (error instanceof NotFoundException) throw error;
+      return { success: false, message: 'Failed to delete course', error: error.message };
+    }
+  }
+
+  async removeLessonFile(id: string): Promise<SeriesResponse<{ id: string }>> {
+    try {
+      const existingLesson = await this.prisma.lessonFile.findUnique({
+        where: { id },
+        select: { id: true, url: true, doc: true },
+      });
+
+      if (!existingLesson) {
+        throw new NotFoundException(`Lesson file with ID ${id} not found`);
+      }
+
+      try {
+        if (existingLesson.url) {
+          await SojebStorage.delete(appConfig().storageUrl.lesson_file + existingLesson.url);
+        }
+        if (existingLesson.doc) {
+          await SojebStorage.delete(appConfig().storageUrl.doc_file + existingLesson.doc);
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to delete some lesson files: ${err.message}`);
+      }
+
+      await this.prisma.lessonFile.delete({ where: { id } });
+
+      return {
+        success: true,
+        message: 'Lesson file deleted successfully',
+        data: { id },
+      };
+    } catch (error) {
+      this.logger.error(`Error deleting lesson file ${id}: ${error.message}`, error.stack);
+      if (error instanceof NotFoundException) throw error;
+      return { success: false, message: 'Failed to delete lesson file', error: error.message };
+    }
+  }
+
   /**
    * Get file kind based on MIME type
    */

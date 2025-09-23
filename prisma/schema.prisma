@@ -809,7 +809,7 @@ model AssignmentSubmission {
   updated_at DateTime @updatedAt
 
   assignment_id    String
-  user_id          String
+  student_id       String
   status           SubmissionStatus @default(DRAFT)
   total_marks      Int              @default(0)
   overall_feedback String?
@@ -817,12 +817,12 @@ model AssignmentSubmission {
   graded_at        DateTime?
 
   assignment Assignment             @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
-  learner    User                   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  student    User                   @relation(fields: [student_id], references: [id], onDelete: Cascade)
   graded_by  User?                  @relation("SubmissionGrader", fields: [graded_by_id], references: [id], onDelete: SetNull)
   answers    AssignmentAnswer[]
   files      SubmissionAttachment[]
 
-  @@unique([assignment_id, user_id]) // one submission per learner
+  @@unique([assignment_id, student_id])
   @@index([assignment_id, status])
   @@map("assignment_submissions")
 }

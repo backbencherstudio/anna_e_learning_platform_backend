@@ -236,6 +236,18 @@ export class SeriesController {
     return this.seriesService.findOne(id);
   }
 
+  @Delete('course/:id')
+  @HttpCode(HttpStatus.OK)
+  async removeCourse(@Param('id') id: string) {
+    return this.seriesService.removeCourse(id);
+  }
+
+  @Delete('lesson-file/:id')
+  @HttpCode(HttpStatus.OK)
+  async removeLessonFile(@Param('id') id: string) {
+    return this.seriesService.removeLessonFile(id);
+  }
+
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(
