@@ -188,6 +188,11 @@ export class AssignmentService {
       });
     }
 
+    await this.prisma.assignmentSubmission.update({
+      where: { id: submission.id },
+      data: { status: 'SUBMITTED' as any, submitted_at: new Date() },
+    });
+
     return { success: true, message: 'Submission saved', data: { submission_id: submission.id } };
   }
 
@@ -210,8 +215,7 @@ export class AssignmentService {
         overall_feedback: true,
         graded_by_id: true,
         graded_at: true,
-        created_at: true,
-        updated_at: true,
+        submitted_at: true,
         answers: {
           select: {
             id: true,

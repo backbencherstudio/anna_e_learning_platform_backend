@@ -814,6 +814,7 @@ model AssignmentSubmission {
   overall_feedback String?
   graded_by_id     String?
   graded_at        DateTime?
+  submitted_at     DateTime?
 
   assignment Assignment             @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
   student    User                   @relation(fields: [student_id], references: [id], onDelete: Cascade)
