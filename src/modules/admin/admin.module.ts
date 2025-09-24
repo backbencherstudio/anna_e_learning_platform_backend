@@ -15,6 +15,7 @@ import { ScholarshipCodeModule } from './scholarship-code/scholarship-code.modul
 import { AssignmentSubmissionModule } from './assignment-submission/assignment-submission.module';
 import { QuizSubmissionModule } from './quiz-submission/quiz-submission.module';
 import { StudentFileModule } from './student-file/student-file.module';
+import { FeedbackModule } from './feedback/feedback.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { StudentFileModule } from './student-file/student-file.module';
     AssignmentSubmissionModule,
     QuizSubmissionModule,
     StudentFileModule,
+    FeedbackModule,
   ],
 })
 export class AdminModule { }
