@@ -110,6 +110,7 @@ model User {
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
   checkouts              Checkout[]
   scholarship_codes      ScholarshipCode[]
+  student_files          StudentFile[]
 
   @@map("users")
 }
@@ -629,6 +630,9 @@ model StudentFile {
   week_number  Int?
   section_type String
 
+  student_id String?
+  student    User?   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
   series_id String
   series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
@@ -814,6 +818,7 @@ model AssignmentSubmission {
   overall_feedback String?
   graded_by_id     String?
   graded_at        DateTime?
+  submitted_at     DateTime?
 
   assignment Assignment             @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
   student    User                   @relation(fields: [student_id], references: [id], onDelete: Cascade)

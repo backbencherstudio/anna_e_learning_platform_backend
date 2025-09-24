@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UsePipes, ValidationPipe, HttpStatus, HttpCode, UseInterceptors, UploadedFiles, UploadedFile, Req, Logger } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UsePipes, ValidationPipe, HttpStatus, HttpCode, UseInterceptors, UploadedFiles, UploadedFile, Req, Logger, UseGuards } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { SeriesService } from './series.service';
 import { CreateSeriesDto } from './dto/create-series.dto';
@@ -8,9 +8,14 @@ import { multerConfig } from '../../../config/multer.config';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateLessonFileDto } from './dto/create-lesson-file.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import { Roles } from 'src/common/guard/role/roles.decorator';
+import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guard/role/roles.guard';
+import { Role } from 'src/common/guard/role/role.enum';
 
 
-
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
 @Controller('admin/series')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class SeriesController {

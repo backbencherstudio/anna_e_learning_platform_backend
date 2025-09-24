@@ -37,8 +37,4 @@ export class CreateStudentFileDto {
     @IsString()
     @IsNotEmpty()
     course_id!: string;
-
-    @IsOptional()
-    @IsString()
-    student_id?: string;
 }

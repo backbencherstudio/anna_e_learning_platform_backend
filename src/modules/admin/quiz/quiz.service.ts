@@ -37,13 +37,16 @@ export class QuizService {
         where: {
           ...whereClause,
           is_published: true,
-          // todo submissions: {
-          //   some: {
-          //     status: {
-          //       in: ['SUBMITTED', 'GRADED'],
-          //     },
-          //   },
-          // },
+          submissions: {
+            some: {
+              status: {
+                in: ['SUBMITTED', 'GRADED'],
+              },
+              submitted_at: {
+                not: null,
+              },
+            },
+          },
         },
         take: limit,
         select: {
@@ -54,6 +57,7 @@ export class QuizService {
           is_published: true,
           created_at: true,
           total_marks: true,
+          series_id: true,
           series: {
             select: {
               id: true,
@@ -77,6 +81,7 @@ export class QuizService {
               status: true,
               total_grade: true,
               percentage: true,
+              submitted_at: true,
             },
           },
         },
@@ -88,6 +93,9 @@ export class QuizService {
         where: {
           ...whereClause,
           is_published: true,
+          due_at: {
+            gte: new Date(),
+          },
         },
         take: limit,
         select: {
@@ -121,6 +129,21 @@ export class QuizService {
         orderBy: { created_at: 'desc' },
       });
 
+      // Calculate total enrolled students for each series
+      const seriesEnrollmentCounts = new Map<string, number>();
+      for (const quiz of submittedQuizzes) {
+        if (quiz.series_id && !seriesEnrollmentCounts.has(quiz.series_id)) {
+          const enrolledCount = await this.prisma.enrollment.count({
+            where: {
+              series_id: quiz.series_id,
+              deleted_at: null,
+              status: { in: ['ACTIVE', 'COMPLETED'] },
+            },
+          });
+          seriesEnrollmentCounts.set(quiz.series_id, enrolledCount);
+        }
+      }
+
       // Calculate submission statistics for published quizzes
       const submittedQuizzesWithStats = submittedQuizzes.map(quiz => {
         const submittedCount = quiz.submissions.filter(s => s.status === 'SUBMITTED' || s.status === 'GRADED').length;
@@ -132,10 +155,12 @@ export class QuizService {
             .reduce((sum, s) => sum + (s.percentage || 0), 0) / gradedCount
           : 0;
 
+        const totalStudents = quiz.series_id ? seriesEnrollmentCounts.get(quiz.series_id) || 0 : 0;
+
         return {
           ...quiz,
           submission_count: submittedCount,
-          total_students: 34,  //todo: This should be calculated from actual enrollments
+          total_students: totalStudents,
         };
       });
 

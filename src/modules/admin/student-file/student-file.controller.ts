@@ -7,34 +7,19 @@ import { StudentFileResponse } from './interfaces/student-file-response.interfac
 import { Roles } from 'src/common/guard/role/roles.decorator';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guard/role/roles.guard';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Role } from 'src/common/guard/role/role.enum';
 
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.STUDENT)
-
-@Controller('student/student-files')
+@Roles(Role.ADMIN)
+@Controller('admin/student-files')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class StudentFileController {
   constructor(private readonly studentFileService: StudentFileService) { }
 
-  @Post()
-  @HttpCode(HttpStatus.CREATED)
-  @UseInterceptors(FileInterceptor('file'))
-  async create(
-    @Req() req: any,
-    @Body() createStudentFileDto: CreateStudentFileDto,
-    @UploadedFile() file?: Express.Multer.File,
-  ): Promise<StudentFileResponse<any>> {
-    const user_id = req.user.userId;
-    return this.studentFileService.create(createStudentFileDto, user_id, file);
-  }
-
   @Get()
   @HttpCode(HttpStatus.OK)
   async findAll(
-    @Req() req: any,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
@@ -46,32 +31,8 @@ export class StudentFileController {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
     const weekNum = week_number ? parseInt(week_number, 10) : undefined;
-    const user_id = req.user.userId;
 
-    return this.studentFileService.findAll(pageNum, limitNum, search, series_id, course_id, section_type, weekNum, user_id);
-  }
-
-  @Get('series/:series_id')
-  @HttpCode(HttpStatus.OK)
-  async findBySeries(@Param('series_id') series_id: string): Promise<StudentFileResponse<any[]>> {
-    return this.studentFileService.findBySeries(series_id);
-  }
-
-  @Get('course/:course_id')
-  @HttpCode(HttpStatus.OK)
-  async findByCourse(@Param('course_id') course_id: string): Promise<StudentFileResponse<any[]>> {
-    return this.studentFileService.findByCourse(course_id);
-  }
-
-  @Get('week/:week_number')
-  @HttpCode(HttpStatus.OK)
-  async findByWeek(
-    @Param('week_number') week_number: string,
-    @Query('series_id') series_id?: string,
-    @Query('course_id') course_id?: string,
-  ): Promise<StudentFileResponse<any[]>> {
-    const weekNum = parseInt(week_number, 10);
-    return this.studentFileService.findByWeek(weekNum, series_id, course_id);
+    return this.studentFileService.findAll(pageNum, limitNum, search, series_id, course_id, section_type, weekNum);
   }
 
   @Get(':id')
