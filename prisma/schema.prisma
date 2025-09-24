@@ -111,6 +111,7 @@ model User {
   checkouts              Checkout[]
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
+  feedbacks              Feedback[]
 
   @@map("users")
 }
@@ -546,6 +547,7 @@ model Course {
   student_files    StudentFile[]
   lesson_progress  LessonProgress[]
   scholarshipCodes ScholarshipCode[] @relation("ScholarshipCourse")
+  feedbacks        Feedback[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -1036,4 +1038,26 @@ model ScholarshipCode {
   courses Course[] @relation("ScholarshipCourse")
 
   @@map("scholarship_codes")
+}
+
+model Feedback {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  week_number String?
+  type        String? @default("course_review")
+  title       String?
+  description String?
+  status      String? @default("pending")
+  file_url    String?
+
+  course_id String
+  course    Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@map("feedbacks")
 }
