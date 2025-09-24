@@ -1,5 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import appConfig from 'src/config/app.config';
+import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
 
 @Injectable()
 export class AssignmentSubmissionService {
@@ -59,6 +61,7 @@ export class AssignmentSubmissionService {
                 id: true,
                 name: true,
                 email: true,
+                avatar: true,
               },
             },
           },
@@ -66,6 +69,15 @@ export class AssignmentSubmissionService {
         }),
         this.prisma.assignmentSubmission.count({ where }),
       ]);
+
+      // add avatar url to student
+      for (const submission of submissions) {
+        if (submission.student.avatar) {
+          submission.student['avatar_url'] = SojebStorage.url(
+            appConfig().storageUrl.avatar + submission.student.avatar,
+          );
+        }
+      }
 
       const totalPages = Math.ceil(total / limit);
       const hasNextPage = page < totalPages;
@@ -125,6 +137,7 @@ export class AssignmentSubmissionService {
               id: true,
               name: true,
               email: true,
+              avatar: true,
             },
           },
           graded_by: {
@@ -166,6 +179,13 @@ export class AssignmentSubmissionService {
 
       if (!submission) {
         throw new NotFoundException(`Assignment submission with ID ${id} not found`);
+      }
+
+      // add avatar url to student
+      if (submission.student.avatar) {
+        submission.student['avatar_url'] = SojebStorage.url(
+          appConfig().storageUrl.avatar + submission.student.avatar,
+        );
       }
 
       return {

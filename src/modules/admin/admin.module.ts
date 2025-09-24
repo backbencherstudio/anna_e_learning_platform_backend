@@ -13,6 +13,7 @@ import { MaterialsModule } from './materials/materials.module';
 import { TeacherSectionModule } from './teacher-section/teacher-section.module';
 import { ScholarshipCodeModule } from './scholarship-code/scholarship-code.module';
 import { AssignmentSubmissionModule } from './assignment-submission/assignment-submission.module';
+import { QuizSubmissionModule } from './quiz-submission/quiz-submission.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { AssignmentSubmissionModule } from './assignment-submission/assignment-s
     TeacherSectionModule,
     ScholarshipCodeModule,
     AssignmentSubmissionModule,
+    QuizSubmissionModule,
   ],
 })
 export class AdminModule { }
