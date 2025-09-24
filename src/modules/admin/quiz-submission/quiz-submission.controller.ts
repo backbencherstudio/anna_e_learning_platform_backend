@@ -1,6 +1,13 @@
-import { Controller, Get, Param, Query, HttpStatus, HttpCode } from '@nestjs/common';
+import { Controller, Get, Param, Query, HttpStatus, HttpCode, UseGuards } from '@nestjs/common';
 import { QuizSubmissionService } from './quiz-submission.service';
+import { Roles } from 'src/common/guard/role/roles.decorator';
+import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guard/role/roles.guard';
+import { Role } from 'src/common/guard/role/role.enum';
 
+
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
 @Controller('admin/quiz-submission')
 export class QuizSubmissionController {
   constructor(private readonly quizSubmissionService: QuizSubmissionService) { }

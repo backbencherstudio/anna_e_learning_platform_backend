@@ -14,101 +14,6 @@ export class StudentFileService {
 
   constructor(private readonly prisma: PrismaService) { }
 
-  /**
-   * Create a new student file with optional file upload
-   */
-  async create(createStudentFileDto: CreateStudentFileDto, user_id: string, file?: Express.Multer.File): Promise<StudentFileResponse<StudentFile>> {
-    try {
-      this.logger.log('Creating new student file');
-
-      // Validate that series and course exist
-      const [series, course] = await Promise.all([
-        this.prisma.series.findUnique({ where: { id: createStudentFileDto.series_id } }),
-        this.prisma.course.findUnique({ where: { id: createStudentFileDto.course_id } }),
-      ]);
-
-      if (!series) {
-        throw new BadRequestException('Series not found');
-      }
-      if (!course) {
-        throw new BadRequestException('Course not found');
-      }
-
-      // Validate that the course belongs to the series
-      if (course.series_id !== createStudentFileDto.series_id) {
-        throw new BadRequestException('Course does not belong to the specified series');
-      }
-
-      // check enrollment
-      const enrollment = await this.prisma.enrollment.findFirst({
-        where: {
-          series_id: createStudentFileDto.series_id,
-          user_id
-        },
-      });
-
-      if (!enrollment) {
-        throw new BadRequestException('You are not enrolled in this series');
-      }
-
-      // Handle file upload if provided
-      let fileUrl: string | undefined;
-      if (file) {
-        const fileName = StringHelper.generateRandomFileName(file.originalname);
-        await SojebStorage.put(appConfig().storageUrl.student_file + fileName, file.buffer);
-        fileUrl = fileName;
-        this.logger.log(`Uploaded student file: ${fileName}`);
-      } else if (createStudentFileDto.url) {
-        fileUrl = createStudentFileDto.url;
-      }
-
-      const studentFile = await this.prisma.studentFile.create({
-        data: {
-          type: createStudentFileDto.type,
-          url: fileUrl,
-          kind: createStudentFileDto.kind,
-          alt: createStudentFileDto.alt,
-          week_number: createStudentFileDto.week_number,
-          section_type: createStudentFileDto.section_type,
-          series_id: createStudentFileDto.series_id,
-          course_id: createStudentFileDto.course_id,
-          student_id: user_id,
-        },
-        include: {
-          series: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-          course: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-      });
-
-      // Add file URL to response
-      if (studentFile.url) {
-        studentFile['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + studentFile.url);
-      }
-
-      return {
-        success: true,
-        message: 'Student file created successfully',
-        data: studentFile,
-      };
-    } catch (error) {
-      this.logger.error(`Error creating student file: ${error.message}`, error.stack);
-      return {
-        success: false,
-        message: 'Failed to create student file',
-        error: error.message,
-      };
-    }
-  }
 
   /**
    * Get all student files with pagination and filtering
@@ -121,7 +26,6 @@ export class StudentFileService {
     course_id?: string,
     section_type?: string,
     week_number?: number,
-    user_id?: string,
   ): Promise<StudentFileResponse<{ student_files: any[]; pagination: any }>> {
     try {
       this.logger.log('Fetching all student files');
@@ -129,7 +33,6 @@ export class StudentFileService {
       const skip = (page - 1) * limit;
       const where: any = {
         deleted_at: null,
-        student_id: user_id,
       };
 
       // Add search filter
@@ -178,6 +81,14 @@ export class StudentFileService {
                 title: true,
               },
             },
+            student: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                avatar: true,
+              },
+            },
           },
           orderBy: [
             { week_number: 'asc' },
@@ -192,8 +103,10 @@ export class StudentFileService {
         if (studentFile.url) {
           studentFile['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + studentFile.url);
         }
+        if (studentFile.student.avatar) {
+          studentFile.student['avatar_url'] = SojebStorage.url(appConfig().storageUrl.avatar + studentFile.student.avatar);
+        }
       }
-
       // Calculate pagination values
       const totalPages = Math.ceil(total / limit);
       const hasNextPage = page < totalPages;
@@ -249,6 +162,14 @@ export class StudentFileService {
               title: true,
             },
           },
+          student: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatar: true,
+            },
+          },
         },
       });
 
@@ -259,6 +180,11 @@ export class StudentFileService {
       // Add file URL to response
       if (studentFile.url) {
         studentFile['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + studentFile.url);
+      }
+
+      // Add avatar url to student
+      if (studentFile.student.avatar) {
+        studentFile.student['avatar_url'] = SojebStorage.url(appConfig().storageUrl.avatar + studentFile.student.avatar);
       }
 
       return {
@@ -276,9 +202,6 @@ export class StudentFileService {
     }
   }
 
-  /**
-   * Update a student file with optional file upload
-   */
   async update(id: string, updateStudentFileDto: UpdateStudentFileDto, file?: Express.Multer.File): Promise<StudentFileResponse<StudentFile>> {
     try {
       this.logger.log(`Updating student file with ID: ${id}`);
@@ -399,178 +322,6 @@ export class StudentFileService {
       return {
         success: false,
         message: 'Failed to delete student file',
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Get student files by series ID
-   */
-  async findBySeries(series_id: string): Promise<StudentFileResponse<StudentFile[]>> {
-    try {
-      this.logger.log(`Fetching student files for series: ${series_id}`);
-
-      const studentFiles = await this.prisma.studentFile.findMany({
-        where: {
-          series_id,
-          deleted_at: null,
-        },
-        include: {
-          series: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-          course: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-        orderBy: [
-          { week_number: 'asc' },
-          { created_at: 'desc' },
-        ],
-      });
-
-      // Add file URLs to all student files
-      for (const studentFile of studentFiles) {
-        if (studentFile.url) {
-          studentFile['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + studentFile.url);
-        }
-      }
-
-      return {
-        success: true,
-        message: 'Student files retrieved successfully',
-        data: studentFiles,
-      };
-    } catch (error) {
-      this.logger.error(`Error fetching student files by series: ${error.message}`, error.stack);
-      return {
-        success: false,
-        message: 'Failed to fetch student files',
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Get student files by course ID
-   */
-  async findByCourse(course_id: string): Promise<StudentFileResponse<StudentFile[]>> {
-    try {
-      this.logger.log(`Fetching student files for course: ${course_id}`);
-
-      const studentFiles = await this.prisma.studentFile.findMany({
-        where: {
-          course_id,
-          deleted_at: null,
-        },
-        include: {
-          series: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-          course: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-        orderBy: [
-          { week_number: 'asc' },
-          { created_at: 'desc' },
-        ],
-      });
-
-      // Add file URLs to all student files
-      for (const studentFile of studentFiles) {
-        if (studentFile.url) {
-          studentFile['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + studentFile.url);
-        }
-      }
-
-      return {
-        success: true,
-        message: 'Student files retrieved successfully',
-        data: studentFiles,
-      };
-    } catch (error) {
-      this.logger.error(`Error fetching student files by course: ${error.message}`, error.stack);
-      return {
-        success: false,
-        message: 'Failed to fetch student files',
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Get student files by week number
-   */
-  async findByWeek(week_number: number, series_id?: string, course_id?: string): Promise<StudentFileResponse<StudentFile[]>> {
-    try {
-      this.logger.log(`Fetching student files for week: ${week_number}`);
-
-      const where: any = {
-        week_number,
-        deleted_at: null,
-      };
-
-      if (series_id) {
-        where.series_id = series_id;
-      }
-
-      if (course_id) {
-        where.course_id = course_id;
-      }
-
-      const studentFiles = await this.prisma.studentFile.findMany({
-        where,
-        include: {
-          series: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-          course: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-        orderBy: [
-          { section_type: 'asc' },
-          { created_at: 'desc' },
-        ],
-      });
-
-      // Add file URLs to all student files
-      for (const studentFile of studentFiles) {
-        if (studentFile.url) {
-          studentFile['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + studentFile.url);
-        }
-      }
-
-      return {
-        success: true,
-        message: 'Student files retrieved successfully',
-        data: studentFiles,
-      };
-    } catch (error) {
-      this.logger.error(`Error fetching student files by week: ${error.message}`, error.stack);
-      return {
-        success: false,
-        message: 'Failed to fetch student files',
         error: error.message,
       };
     }

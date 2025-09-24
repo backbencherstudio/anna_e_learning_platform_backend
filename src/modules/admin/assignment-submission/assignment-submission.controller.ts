@@ -1,9 +1,16 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query, HttpStatus, HttpCode, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, HttpStatus, HttpCode, Req, UseGuards } from '@nestjs/common';
 import { AssignmentSubmissionService } from './assignment-submission.service';
 import { CreateAssignmentSubmissionDto } from './dto/create-assignment-submission.dto';
 import { UpdateAssignmentSubmissionDto } from './dto/update-assignment-submission.dto';
 import { GradeSubmissionDto } from './dto/grade-submission.dto';
+import { Roles } from 'src/common/guard/role/roles.decorator';
+import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guard/role/roles.guard';
+import { Role } from 'src/common/guard/role/role.enum';
 
+
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
 @Controller('admin/assignment-submission')
 export class AssignmentSubmissionController {
   constructor(private readonly assignmentSubmissionService: AssignmentSubmissionService) { }

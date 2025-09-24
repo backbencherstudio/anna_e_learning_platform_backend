@@ -110,6 +110,7 @@ model User {
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
   checkouts              Checkout[]
   scholarship_codes      ScholarshipCode[]
+  student_files          StudentFile[]
 
   @@map("users")
 }
@@ -628,6 +629,9 @@ model StudentFile {
   alt          String?
   week_number  Int?
   section_type String
+
+  student_id String?
+  student    User?   @relation(fields: [student_id], references: [id], onDelete: Cascade)
 
   series_id String
   series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
