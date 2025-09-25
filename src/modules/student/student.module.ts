@@ -7,6 +7,8 @@ import { CheckoutModule } from './checkout/checkout.module';
 import { AssignmentModule } from './assignment/assignment.module';
 import { QuizModule } from './quiz/quiz.module';
 import { FeedbackModule } from './feedback/feedback.module';
+import { ContactModule } from './contact/contact.module';
+import { ScheduleEventModule } from './schedule-event/schedule-event.module';
 ;
 
 @Module({
@@ -18,7 +20,9 @@ import { FeedbackModule } from './feedback/feedback.module';
         CheckoutModule,
         AssignmentModule,
         QuizModule,
-        FeedbackModule
+        FeedbackModule,
+        ContactModule,
+        ScheduleEventModule
     ],
 })
 export class StudentModule { }

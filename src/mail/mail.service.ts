@@ -9,7 +9,7 @@ export class MailService {
   constructor(
     @InjectQueue('mail-queue') private queue: Queue,
     private mailerService: MailerService,
-  ) {}
+  ) { }
 
   async sendMemberInvitation({ user, member, url }) {
     try {

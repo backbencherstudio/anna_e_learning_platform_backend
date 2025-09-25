@@ -1,107 +1,46 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  UseGuards,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Param, Query, HttpStatus, HttpCode, UseGuards, Patch, Body, Delete } from '@nestjs/common';
 import { ContactService } from './contact.service';
-import { CreateContactDto } from './dto/create-contact.dto';
-import { UpdateContactDto } from './dto/update-contact.dto';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../../common/guard/role/roles.guard';
 import { Roles } from '../../../common/guard/role/roles.decorator';
 import { Role } from '../../../common/guard/role/role.enum';
-import { RolesGuard } from '../../../common/guard/role/roles.guard';
 
-@ApiBearerAuth()
-@ApiTags('Contact')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 @Controller('admin/contact')
 export class ContactController {
-  constructor(private readonly contactService: ContactService) {}
+  constructor(private readonly contactService: ContactService) { }
 
-  @ApiOperation({ summary: 'Create contact' })
-  @Post()
-  async create(@Body() createContactDto: CreateContactDto) {
-    try {
-      const contact = await this.contactService.create(createContactDto);
-      return contact;
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  }
-
-  @ApiOperation({ summary: 'Read all contacts' })
   @Get()
-  async findAll(@Query() query: { q?: string; status?: number }) {
-    try {
-      const searchQuery = query.q;
-      const status = query.status;
-
-      const contacts = await this.contactService.findAll({
-        q: searchQuery,
-        status: status,
-      });
-      return contacts;
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  }
-
-  @ApiOperation({ summary: 'Read one contact' })
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    try {
-      const contact = await this.contactService.findOne(id);
-      return contact;
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  }
-
-  @ApiOperation({ summary: 'Update contact' })
-  @Patch(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() updateContactDto: UpdateContactDto,
+  @HttpCode(HttpStatus.OK)
+  findAll(
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('search') search?: string,
+    @Query('status') status?: string,
   ) {
-    try {
-      const contact = await this.contactService.update(id, updateContactDto);
-      return contact;
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.contactService.findAll(pageNum, limitNum, search, status);
   }
 
-  @ApiOperation({ summary: 'Delete contact' })
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  findOne(@Param('id') id: string) {
+    return this.contactService.findOne(id);
+  }
+
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  updateStatus(
+    @Param('id') id: string,
+  ) {
+    return this.contactService.approve(id);
+  }
+
   @Delete(':id')
-  async remove(@Param('id') id: string) {
-    try {
-      const contact = await this.contactService.remove(id);
-      return contact;
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
+  @HttpCode(HttpStatus.OK)
+  remove(@Param('id') id: string) {
+    return this.contactService.remove(id);
   }
 }

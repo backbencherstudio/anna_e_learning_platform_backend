@@ -1,83 +1,85 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
-import { DateHelper } from '../../../common/helper/date.helper';
 
 @Injectable()
 export class ContactService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(ContactService.name);
 
-  async create(createContactDto: CreateContactDto) {
+  constructor(private readonly prisma: PrismaService) { }
+
+  async findAll(
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    status?: string,
+  ) {
     try {
-      const data = {};
-      if (createContactDto.first_name) {
-        data['first_name'] = createContactDto.first_name;
-      }
-      if (createContactDto.last_name) {
-        data['last_name'] = createContactDto.last_name;
-      }
-      if (createContactDto.email) {
-        data['email'] = createContactDto.email;
-      }
-      if (createContactDto.phone_number) {
-        data['phone_number'] = createContactDto.phone_number;
-      }
-      if (createContactDto.message) {
-        data['message'] = createContactDto.message;
-      }
+      const skip = (page - 1) * limit;
+      const where: any = { deleted_at: null };
 
-      await this.prisma.contact.create({
-        data: {
-          ...data,
-          updated_at: DateHelper.now(),
-        },
-      });
-      return {
-        success: true,
-        message: 'Contact created successfully',
-      };
-    } catch (error) {
-      return {
-        success: false,
-        message: error.message,
-      };
-    }
-  }
-
-  async findAll({ q = null, status = null }: { q?: string; status?: number }) {
-    try {
-      const whereClause = {};
-      if (q) {
-        whereClause['OR'] = [
-          { first_name: { contains: q, mode: 'insensitive' } },
-          { last_name: { contains: q, mode: 'insensitive' } },
-          { email: { contains: q, mode: 'insensitive' } },
-          { phone_number: { contains: q, mode: 'insensitive' } },
+      if (status) where.status = status;
+      if (search) {
+        where.OR = [
+          { first_name: { contains: search, mode: 'insensitive' as any } },
+          { last_name: { contains: search, mode: 'insensitive' as any } },
+          { email: { contains: search, mode: 'insensitive' as any } },
+          { phone_number: { contains: search, mode: 'insensitive' as any } },
+          { reason: { contains: search, mode: 'insensitive' as any } },
+          { message: { contains: search, mode: 'insensitive' as any } },
         ];
       }
-      if (status) {
-        whereClause['status'] = Number(status);
-      }
 
-      const contacts = await this.prisma.contact.findMany({
-        select: {
-          id: true,
-          first_name: true,
-          last_name: true,
-          email: true,
-          phone_number: true,
-          message: true,
-        },
-      });
+      const [contacts, total] = await Promise.all([
+        this.prisma.contact.findMany({
+          where,
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            first_name: true,
+            last_name: true,
+            email: true,
+            phone_number: true,
+            whatsapp_number: true,
+            status: true,
+            date: true,
+            reason: true,
+            message: true,
+            created_at: true,
+            updated_at: true,
+          },
+          orderBy: { created_at: 'desc' },
+        }),
+        this.prisma.contact.count({ where }),
+      ]);
+
+      const totalPages = Math.ceil(total / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
       return {
         success: true,
-        data: contacts,
+        message: 'Contacts retrieved successfully',
+        data: {
+          contacts,
+          pagination: {
+            total,
+            page,
+            limit,
+            totalPages,
+            hasNextPage,
+            hasPreviousPage,
+          },
+        },
       };
     } catch (error) {
+      this.logger.error(`Error fetching contacts: ${error.message}`, error.stack);
       return {
         success: false,
-        message: error.message,
+        message: 'Failed to fetch contacts',
+        error: error.message,
       };
     }
   }
@@ -92,72 +94,122 @@ export class ContactService {
           last_name: true,
           email: true,
           phone_number: true,
+          whatsapp_number: true,
+          status: true,
+          date: true,
+          reason: true,
           message: true,
+          created_at: true,
+          updated_at: true,
         },
       });
+
+      if (!contact) {
+        throw new NotFoundException(`Contact with ID ${id} not found`);
+      }
+
       return {
         success: true,
+        message: 'Contact retrieved successfully',
         data: contact,
       };
     } catch (error) {
+      this.logger.error(`Error fetching contact ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
       return {
         success: false,
-        message: error.message,
+        message: 'Failed to fetch contact',
+        error: error.message,
       };
     }
   }
 
-  async update(id: string, updateContactDto: UpdateContactDto) {
+  async approve(id: string) {
     try {
-      const data = {};
-      if (updateContactDto.first_name) {
-        data['first_name'] = updateContactDto.first_name;
-      }
-      if (updateContactDto.last_name) {
-        data['last_name'] = updateContactDto.last_name;
-      }
-      if (updateContactDto.email) {
-        data['email'] = updateContactDto.email;
-      }
-      if (updateContactDto.phone_number) {
-        data['phone_number'] = updateContactDto.phone_number;
-      }
-      if (updateContactDto.message) {
-        data['message'] = updateContactDto.message;
+      const contact = await this.prisma.contact.findUnique({
+        where: { id },
+        select: { id: true, status: true },
+      });
+
+      if (!contact) {
+        throw new NotFoundException(`Contact with ID ${id} not found`);
       }
 
-      await this.prisma.contact.update({
+      const updatedContact = await this.prisma.contact.update({
         where: { id },
-        data: {
-          ...data,
-          updated_at: DateHelper.now(),
+        data: { status: "approve" },
+        select: {
+          id: true,
+          first_name: true,
+          last_name: true,
+          email: true,
+          phone_number: true,
+          whatsapp_number: true,
+          status: true,
+          date: true,
+          reason: true,
+          message: true,
+          created_at: true,
+          updated_at: true,
         },
       });
+
       return {
         success: true,
-        message: 'Contact updated successfully',
+        message: `Contact status updated to approve`,
+        data: updatedContact,
       };
     } catch (error) {
+      this.logger.error(`Error updating contact status ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
       return {
         success: false,
-        message: error.message,
+        message: 'Failed to update contact status',
+        error: error.message,
       };
     }
   }
 
   async remove(id: string) {
     try {
+      const contact = await this.prisma.contact.findUnique({
+        where: { id },
+        select: { id: true, deleted_at: true },
+      });
+
+      if (!contact) {
+        throw new NotFoundException(`Contact with ID ${id} not found`);
+      }
+
+      // delete the contact
       await this.prisma.contact.delete({
         where: { id },
       });
+
       return {
         success: true,
         message: 'Contact deleted successfully',
+        data: { id },
       };
     } catch (error) {
+      this.logger.error(`Error deleting contact ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
       return {
         success: false,
-        message: error.message,
+        message: 'Failed to delete contact',
+        error: error.message,
       };
     }
   }
