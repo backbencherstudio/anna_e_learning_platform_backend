@@ -3,11 +3,14 @@ import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
 
+
 @Injectable()
 export class ContactService {
   private readonly logger = new Logger(ContactService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+  ) { }
 
   async create(createContactDto: CreateContactDto) {
     try {
@@ -28,6 +31,7 @@ export class ContactService {
       });
 
       this.logger.log(`Contact request created with ID: ${contact.id}`);
+
 
       return {
         success: true,
