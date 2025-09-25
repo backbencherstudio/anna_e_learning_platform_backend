@@ -112,6 +112,7 @@ model User {
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
   feedbacks              Feedback[]
+  schedules              ScheduleEvent[]
 
   @@map("users")
 }
@@ -505,6 +506,7 @@ model Series {
   lesson_progress LessonProgress[]
   checkouts       Checkout[]
   ScholarshipCode ScholarshipCode[]
+  schedules       ScheduleEvent[]
 
   @@map("series")
 }
@@ -533,6 +535,7 @@ model Course {
   lesson_progress  LessonProgress[]
   scholarshipCodes ScholarshipCode[] @relation("ScholarshipCourse")
   feedbacks        Feedback[]
+  schedules        ScheduleEvent[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -655,6 +658,7 @@ model Quiz {
   course      Course?          @relation(fields: [course_id], references: [id], onDelete: SetNull)
   questions   QuizQuestion[]
   submissions QuizSubmission[]
+  schedules   ScheduleEvent[]
 
   @@map("quizzes")
 }
@@ -772,6 +776,7 @@ model Assignment {
   course      Course?                @relation(fields: [course_id], references: [id], onDelete: SetNull)
   questions   AssignmentQuestion[]
   submissions AssignmentSubmission[]
+  schedules   ScheduleEvent[]
 
   @@map("assignments")
 }
@@ -1064,4 +1069,74 @@ model Contact {
   message         String?
 
   @@map("contacts")
+}
+
+model Donation {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  first_name   String?
+  last_name    String?
+  email        String?
+  phone_number String?
+  frequency    String?
+  amount       Decimal?
+  currency     String?
+  type         String?
+  date         DateTime?
+  comment      String?
+  status       String?   @default("pending")
+
+  @@map("donations")
+}
+
+enum ScheduleStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELED
+}
+
+enum ScheduleType {
+  GENERAL
+  LECTURE
+  ASSIGNMENT
+  QUIZ
+  EXAM
+  MEETING
+}
+
+model ScheduleEvent {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  title       String
+  description String?
+  start_at    DateTime
+  end_at      DateTime
+  timezone    String?
+  status      ScheduleStatus @default(SCHEDULED)
+  type        ScheduleType   @default(GENERAL)
+  metadata    Json?
+
+  // who sees it / owner
+  user_id String?
+  user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // optional links for context
+  assignment_id String?
+  assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)
+  quiz_id       String?
+  quiz          Quiz?       @relation(fields: [quiz_id], references: [id], onDelete: SetNull)
+  course_id     String?
+  course        Course?     @relation(fields: [course_id], references: [id], onDelete: SetNull)
+  series_id     String?
+  series        Series?     @relation(fields: [series_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id, start_at])
+  @@index([status, start_at])
+  @@map("schedule_events")
 }

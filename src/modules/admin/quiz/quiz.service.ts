@@ -3,9 +3,10 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { QuizResponse } from './interfaces/quiz-response.interface';
-import { Quiz, QuizQuestion, QuestionAnswer } from '@prisma/client';
+import { Quiz, QuizQuestion, QuestionAnswer, ScheduleType } from '@prisma/client';
 import { DateHelper } from 'src/common/helper/date.helper';
 import { QuizPublishService } from '../../queue/quiz-publish.service';
+import { ScheduleEventRepository } from 'src/common/repository/schedule-event/schedule-event.repository';
 
 @Injectable()
 export class QuizService {
@@ -268,7 +269,7 @@ export class QuizService {
             total_marks: totalMarks,
             due_at: createQuizDto.due_at ? new Date(createQuizDto.due_at) : undefined,
             is_published: shouldPublishImmediately,
-            published_at: shouldPublishImmediately ? now : undefined,
+            published_at: publishAt,
             publication_status: publicationStatus,
             scheduled_publish_at: scheduledPublishAt,
             metadata: createQuizDto.metadata,
@@ -306,7 +307,6 @@ export class QuizService {
             this.logger.log(`Created answer with ID: ${answer.id}, is_correct: ${answer.is_correct}`);
           }
         }
-
         return quiz;
       });
 
@@ -320,6 +320,18 @@ export class QuizService {
           // Don't throw error here as the quiz was created successfully
         }
       }
+
+      // Create schedule event
+       // Create schedule event
+       await ScheduleEventRepository.createEvent({
+        quiz_id: result.id,
+        title: result.title,
+        start_at: result.published_at,
+        end_at: result.due_at,
+        type: ScheduleType.QUIZ,
+        series_id: result.series_id,
+        course_id: result.course_id,
+      });
 
       // Fetch the complete quiz with relations
       const quizWithRelations = await this.prisma.quiz.findUnique({
