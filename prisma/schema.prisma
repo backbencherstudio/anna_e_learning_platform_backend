@@ -370,21 +370,6 @@ model Faq {
   @@map("faqs")
 }
 
-model Contact {
-  id         String    @id @default(cuid())
-  created_at DateTime  @default(now())
-  updated_at DateTime  @default(now())
-  deleted_at DateTime?
-
-  first_name   String?
-  last_name    String?
-  email        String?
-  phone_number String?
-  message      String?
-
-  @@map("contacts")
-}
-
 model SocialMedia {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
@@ -1060,4 +1045,23 @@ model Feedback {
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@map("feedbacks")
+}
+
+model Contact {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+
+  first_name      String?
+  last_name       String?
+  email           String?
+  phone_number    String?
+  whatsapp_number String?
+  status          String?   @default("pending")
+  date            DateTime?
+  reason          String?
+  message         String?
+
+  @@map("contacts")
 }
