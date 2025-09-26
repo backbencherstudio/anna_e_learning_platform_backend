@@ -27,26 +27,28 @@ export class ScheduleEventService {
 
             const seriesIds = enrollments.map((e) => e.series_id).filter(Boolean) as string[];
 
+            if (seriesIds.length === 0) {
+                return {
+                    success: true,
+                    message: 'No enrolled series found',
+                    data: { events: [] },
+                };
+            }
+
             // collect assignment, quiz, and course ids under those series
             const [assignments, quizzes, courses] = await Promise.all([
-                seriesIds.length
-                    ? this.prisma.assignment.findMany({
-                        where: { series_id: { in: seriesIds } },
-                        select: { id: true, title: true },
-                    })
-                    : Promise.resolve([]),
-                seriesIds.length
-                    ? this.prisma.quiz.findMany({
-                        where: { series_id: { in: seriesIds } },
-                        select: { id: true, title: true },
-                    })
-                    : Promise.resolve([]),
-                seriesIds.length
-                    ? this.prisma.course.findMany({
-                        where: { series_id: { in: seriesIds } },
-                        select: { id: true, title: true },
-                    })
-                    : Promise.resolve([]),
+                this.prisma.assignment.findMany({
+                    where: { series_id: { in: seriesIds } },
+                    select: { id: true, title: true },
+                }),
+                this.prisma.quiz.findMany({
+                    where: { series_id: { in: seriesIds } },
+                    select: { id: true, title: true },
+                }),
+                this.prisma.course.findMany({
+                    where: { series_id: { in: seriesIds } },
+                    select: { id: true, title: true },
+                }),
             ]);
 
             const assignmentIds = assignments.map((a) => a.id);
@@ -54,12 +56,14 @@ export class ScheduleEventService {
             const courseIds = courses.map((c) => c.id);
 
             const where: any = {
+                deleted_at: null,
+                status: 'SCHEDULED', // Only show scheduled events
                 OR: [
+                    { user_id: studentId }, // Events directly assigned to the student
+                    seriesIds.length ? { series_id: { in: seriesIds } } : undefined,
+                    courseIds.length ? { course_id: { in: courseIds } } : undefined,
                     assignmentIds.length ? { assignment_id: { in: assignmentIds } } : undefined,
                     quizIds.length ? { quiz_id: { in: quizIds } } : undefined,
-                    courseIds.length ? { course_id: { in: courseIds } } : undefined,
-                    seriesIds.length ? { series_id: { in: seriesIds } } : undefined,
-                    { user_id: studentId },
                 ].filter(Boolean),
             };
 

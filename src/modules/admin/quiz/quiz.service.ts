@@ -7,6 +7,8 @@ import { Quiz, QuizQuestion, QuestionAnswer, ScheduleType } from '@prisma/client
 import { DateHelper } from 'src/common/helper/date.helper';
 import { QuizPublishService } from '../../queue/quiz-publish.service';
 import { ScheduleEventRepository } from 'src/common/repository/schedule-event/schedule-event.repository';
+import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
+import { MessageGateway } from 'src/modules/chat/message/message.gateway';
 
 @Injectable()
 export class QuizService {
@@ -15,6 +17,7 @@ export class QuizService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly quizPublishService: QuizPublishService,
+    private readonly messageGateway: MessageGateway,
   ) { }
 
   /**
@@ -320,25 +323,55 @@ export class QuizService {
           // Don't throw error here as the quiz was created successfully
         }
       }
-
-      // Create schedule event
-       // Create schedule event
-       await ScheduleEventRepository.createEvent({
-        quiz_id: result.id,
-        title: result.title,
-        start_at: result.published_at,
-        end_at: result.due_at,
-        type: ScheduleType.QUIZ,
-        series_id: result.series_id,
-        course_id: result.course_id,
-      });
-
       // Fetch the complete quiz with relations
       const quizWithRelations = await this.prisma.quiz.findUnique({
         where: { id: result.id },
       });
 
       this.logger.log(`Quiz created successfully with ID: ${result.id}`);
+
+         // Create schedule event
+         await ScheduleEventRepository.createEvent({
+          quiz_id: result.id,
+          title: result.title,
+          start_at: result.published_at,
+          end_at: result.due_at,
+          type: ScheduleType.QUIZ,
+          series_id: result.series_id,
+          course_id: result.course_id,
+        });
+  
+        // Get all enrolled students in the series
+        const enrolledStudents = await this.prisma.enrollment.findMany({
+          where: {
+            series_id: result.series_id,
+            deleted_at: null,
+            status: { in: ['ACTIVE', 'COMPLETED'] as any },
+          },
+          select: { user_id: true },
+        });
+  
+        // Send notifications to all enrolled students
+        const notificationPromises = enrolledStudents.map(student =>
+          NotificationRepository.createNotification({
+            receiver_id: student.user_id,
+            text: `New quiz "${result.title}" has been published`,
+            type: 'quiz',
+            entity_id: result.id,
+          })
+        );
+  
+        await Promise.all(notificationPromises);
+  
+        // Send real-time notifications to all enrolled students
+        enrolledStudents.forEach(student => {
+          this.messageGateway.server.emit('notification', {
+            receiver_id: student.user_id,
+            text: `New quiz "${result.title}" has been published`,
+            type: 'quiz',
+            entity_id: result.id,
+          });
+        });
 
       return {
         success: true,
@@ -681,6 +714,34 @@ export class QuizService {
       if (!existingQuiz) {
         throw new NotFoundException(`Quiz with ID ${id} not found`);
       }
+
+      // Get all submissions first
+      const submissions = await this.prisma.quizSubmission.findMany({
+        where: { quiz_id: id },
+        select: { id: true },
+      });
+
+      // Delete all assignment answers
+      if (submissions.length > 0) {
+        await this.prisma.quizSubmissionAnswer.deleteMany({
+          where: { submission_id: { in: submissions.map(submission => submission.id) } },
+        });
+      }
+
+      // Delete all assignment submissions
+      await this.prisma.quizSubmission.deleteMany({
+        where: { quiz_id: id },
+      });
+
+      // Delete all assignment questions
+      await this.prisma.quizQuestion.deleteMany({
+        where: { quiz_id: id },
+      });
+
+      // delete all event
+      await this.prisma.scheduleEvent.deleteMany({
+        where: { quiz_id: id },
+      });
 
       // Soft delete the quiz (Prisma middleware will handle this)
       await this.prisma.quiz.delete({

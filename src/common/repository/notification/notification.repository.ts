@@ -30,7 +30,9 @@ export class NotificationRepository {
       | 'payment_transaction'
       | 'package'
       | 'blog'
-      | 'contact';
+      | 'contact'
+      | 'assignment'
+      | 'quiz';
     entity_id?: string;
   }) {
     const notificationEventData = {};

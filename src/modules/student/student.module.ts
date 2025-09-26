@@ -9,6 +9,7 @@ import { QuizModule } from './quiz/quiz.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { ContactModule } from './contact/contact.module';
 import { ScheduleEventModule } from './schedule-event/schedule-event.module';
+import { NotificationModule } from './notification/notification.module';
 ;
 
 @Module({
@@ -22,7 +23,8 @@ import { ScheduleEventModule } from './schedule-event/schedule-event.module';
         QuizModule,
         FeedbackModule,
         ContactModule,
-        ScheduleEventModule
+        ScheduleEventModule,
+        NotificationModule,
     ],
 })
 export class StudentModule { }

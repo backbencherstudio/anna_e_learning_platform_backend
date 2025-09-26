@@ -7,22 +7,16 @@ import { Role } from 'src/common/guard/role/role.enum';
 
 @Injectable()
 export class NotificationService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async findAll(user_id: string) {
     try {
       const where_condition = {};
       const userDetails = await UserRepository.getUserDetails(user_id);
 
-      if (userDetails.type == Role.ADMIN) {
-        where_condition['OR'] = [
-          { receiver_id: { equals: user_id } },
-          { receiver_id: { equals: null } },
-        ];
+      if (userDetails.type == Role.STUDENT) {
+        where_condition['receiver_id'] = user_id;
       }
-      // else if (userDetails.type == Role.VENDOR) {
-      //   where_condition['receiver_id'] = user_id;
-      // }
 
       const notifications = await this.prisma.notification.findMany({
         where: {
@@ -58,6 +52,7 @@ export class NotificationService {
             },
           },
         },
+        orderBy: { created_at: 'desc' },
       });
 
       // add url to avatar
@@ -91,11 +86,11 @@ export class NotificationService {
 
   async remove(id: string, user_id: string) {
     try {
-      // check if notification exists
+      // check if notification exists and belongs to user
       const notification = await this.prisma.notification.findUnique({
         where: {
           id: id,
-          // receiver_id: user_id,
+          receiver_id: user_id,
         },
       });
 
@@ -126,29 +121,91 @@ export class NotificationService {
 
   async removeAll(user_id: string) {
     try {
-      // check if notification exists
+      // check if notifications exist for user
       const notifications = await this.prisma.notification.findMany({
         where: {
-          OR: [{ receiver_id: user_id }, { receiver_id: null }],
+          receiver_id: user_id,
         },
       });
 
       if (notifications.length == 0) {
         return {
           success: false,
-          message: 'Notification not found',
+          message: 'No notifications found',
         };
       }
 
       await this.prisma.notification.deleteMany({
         where: {
-          OR: [{ receiver_id: user_id }, { receiver_id: null }],
+          receiver_id: user_id,
         },
       });
 
       return {
         success: true,
         message: 'All notifications deleted successfully',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  async markAsRead(id: string, user_id: string) {
+    try {
+      // check if notification exists and belongs to user
+      const notification = await this.prisma.notification.findUnique({
+        where: {
+          id: id,
+          receiver_id: user_id,
+        },
+      });
+
+      if (!notification) {
+        return {
+          success: false,
+          message: 'Notification not found',
+        };
+      }
+
+      await this.prisma.notification.update({
+        where: {
+          id: id,
+        },
+        data: {
+          read_at: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Notification marked as read',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error.message,
+      };
+    }
+  }
+
+  async markAllAsRead(user_id: string) {
+    try {
+      await this.prisma.notification.updateMany({
+        where: {
+          receiver_id: user_id,
+          read_at: null,
+        },
+        data: {
+          read_at: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        message: 'All notifications marked as read',
       };
     } catch (error) {
       return {
