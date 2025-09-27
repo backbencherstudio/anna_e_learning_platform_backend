@@ -3,7 +3,6 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { SeriesService } from './series.service';
 import { CreateSeriesDto } from './dto/create-series.dto';
 import { UpdateSeriesDto } from './dto/update-series.dto';
-import { ChunkedUploadService } from '../../../common/lib/upload/ChunkedUploadService';
 import { multerConfig } from '../../../config/multer.config';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateLessonFileDto } from './dto/create-lesson-file.dto';
@@ -23,7 +22,6 @@ export class SeriesController {
 
   constructor(
     private readonly seriesService: SeriesService,
-    private readonly chunkedUploadService: ChunkedUploadService
   ) { }
 
   @Post()

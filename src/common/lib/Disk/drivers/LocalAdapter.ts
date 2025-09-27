@@ -85,4 +85,47 @@ export class LocalAdapter implements IStorage {
       if (err.code !== 'ENOENT') console.error(err);
     }
   }
+
+  // lagre file in local storage
+  async putLargeFile(
+    key: string,
+    stream: NodeJS.ReadableStream,
+    onProgress?: (bytesWritten: number, totalBytes: number) => void
+  ): Promise<void> {
+    try {
+      const filePath = path.join(this._config.connection.rootUrl, key);
+      const dirPath = path.dirname(filePath);
+
+      // Create directory if it doesn't exist
+      await fs.mkdir(dirPath, { recursive: true });
+
+      // Create write stream
+      const writeStream = fsSync.createWriteStream(filePath);
+      let bytesWritten = 0;
+
+      // Stream data chunk by chunk
+      return new Promise((resolve, reject) => {
+        stream.on('data', (chunk) => {
+          bytesWritten += chunk.length;
+          if (onProgress) {
+            onProgress(bytesWritten, null); // totalBytes unknown for streams
+          }
+        });
+
+        stream.on('end', () => {
+          writeStream.end();
+          resolve();
+        });
+
+        stream.on('error', (error) => {
+          writeStream.destroy();
+          reject(error);
+        });
+
+        stream.pipe(writeStream);
+      });
+    } catch (error) {
+      throw error;
+    }
+  }
 }
