@@ -88,6 +88,7 @@ export default () => ({
     teacher_section_file: '/teacher-section/file/',
     student_file: '/student/file/',
     feedback_file: '/feedback/file/',
+    card_generator_file: '/card-generator/file/',
   },
 
   defaultUser: {

@@ -113,6 +113,7 @@ model User {
   student_files          StudentFile[]
   feedbacks              Feedback[]
   schedules              ScheduleEvent[]
+  card_generators        CardGenerator[]
 
   @@map("users")
 }
@@ -1139,4 +1140,23 @@ model ScheduleEvent {
   @@index([user_id, start_at])
   @@index([status, start_at])
   @@map("schedule_events")
+}
+
+model CardGenerator {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  title           String
+  message         String
+  image           String
+  recipient_name  String?
+  recipient_email String?
+  sender_name     String?
+
+  student_id String
+  student    User   @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@map("card_generators")
 }

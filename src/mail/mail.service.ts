@@ -78,4 +78,26 @@ export class MailService {
       console.log(error);
     }
   }
+
+  async sendCardGeneratorEmail({ cardGenerator, recipientEmail, recipientName }) {
+    try {
+      const from = `${process.env.APP_NAME} <${appConfig().mail.from}>`;
+      const subject = `🎉 You received a card: ${cardGenerator.title}`;
+
+      // add to queue
+      await this.queue.add('sendCardGeneratorEmail', {
+        to: recipientEmail,
+        from: from,
+        subject: subject,
+        template: 'card-generator',
+        context: {
+          cardGenerator: cardGenerator,
+          recipientName: recipientName,
+          cardImageUrl: cardGenerator.image_url,
+        },
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  }
 }

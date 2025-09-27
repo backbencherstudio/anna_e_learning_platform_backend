@@ -3,9 +3,12 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { AssignmentResponse } from './interfaces/assignment-response.interface';
-import { Assignment, AssignmentQuestion } from '@prisma/client';
+import { Assignment, AssignmentQuestion, ScheduleType } from '@prisma/client';
 import { DateHelper } from 'src/common/helper/date.helper';
 import { AssignmentPublishService } from '../../queue/assignment-publish.service';
+import { ScheduleEventRepository } from 'src/common/repository/schedule-event/schedule-event.repository';
+import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
+import { MessageGateway } from 'src/modules/chat/message/message.gateway';
 
 @Injectable()
 export class AssignmentService {
@@ -14,6 +17,7 @@ export class AssignmentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly assignmentPublishService: AssignmentPublishService,
+    private readonly messageGateway: MessageGateway,
   ) { }
 
   /**
@@ -64,7 +68,7 @@ export class AssignmentService {
             total_marks: totalMarks,
             due_at: createAssignmentDto.due_at ? new Date(createAssignmentDto.due_at) : undefined,
             is_published: shouldPublishImmediately,
-            published_at: shouldPublishImmediately ? now : undefined,
+            published_at: publishAt,
             publication_status: publicationStatus,
             scheduled_publish_at: scheduledPublishAt,
             series_id: createAssignmentDto.series_id,
@@ -113,6 +117,49 @@ export class AssignmentService {
       });
 
       this.logger.log(`Assignment created successfully with ID: ${result.id}`);
+
+      // Create schedule event
+      await ScheduleEventRepository.createEvent({
+        assignment_id: result.id,
+        title: result.title,
+        start_at: result.published_at,
+        end_at: result.due_at,
+        type: ScheduleType.ASSIGNMENT,
+        series_id: result.series_id,
+        course_id: result.course_id,
+      });
+
+      // Get all enrolled students in the series
+      const enrolledStudents = await this.prisma.enrollment.findMany({
+        where: {
+          series_id: result.series_id,
+          deleted_at: null,
+          status: { in: ['ACTIVE', 'COMPLETED'] as any },
+        },
+        select: { user_id: true },
+      });
+
+      // Send notifications to all enrolled students
+      const notificationPromises = enrolledStudents.map(student =>
+        NotificationRepository.createNotification({
+          receiver_id: student.user_id,
+          text: `New assignment "${result.title}" has been published`,
+          type: 'assignment',
+          entity_id: result.id,
+        })
+      );
+
+      await Promise.all(notificationPromises);
+
+      // Send real-time notifications to all enrolled students
+      enrolledStudents.forEach(student => {
+        this.messageGateway.server.emit('notification', {
+          receiver_id: student.user_id,
+          text: `New assignment "${result.title}" has been published`,
+          type: 'assignment',
+          entity_id: result.id,
+        });
+      });
 
       return {
         success: true,
@@ -631,6 +678,36 @@ export class AssignmentService {
       if (!existingAssignment) {
         throw new NotFoundException(`Assignment with ID ${id} not found`);
       }
+
+      // Get all submissions first
+      const submissions = await this.prisma.assignmentSubmission.findMany({
+        where: { assignment_id: id },
+        select: { id: true },
+      });
+
+      // Delete all assignment answers
+      if (submissions.length > 0) {
+        await this.prisma.assignmentAnswer.deleteMany({
+          where: { submission_id: { in: submissions.map(submission => submission.id) } },
+        });
+      }
+
+      // Delete all assignment submissions
+      await this.prisma.assignmentSubmission.deleteMany({
+        where: { assignment_id: id },
+      });
+
+      // Delete all assignment questions
+      await this.prisma.assignmentQuestion.deleteMany({
+        where: { assignment_id: id },
+      });
+
+      // delete all event
+      await this.prisma.scheduleEvent.deleteMany({
+        where: { assignment_id: id },
+      });
+
+
 
       // Soft delete the assignment (Prisma middleware will handle this)
       await this.prisma.assignment.delete({
