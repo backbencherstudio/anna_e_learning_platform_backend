@@ -194,6 +194,24 @@ export class SeriesController {
     return this.seriesService.findAll(pageNum, limitNum, search);
   }
 
+  @Get('series-title')
+  @HttpCode(HttpStatus.OK)
+  async getSeriesTitle() {
+    return this.seriesService.getSeriesTitle();
+  }
+
+  @Get('course-title')
+  @HttpCode(HttpStatus.OK)
+  async getCourseTitle(@Query('series_id') series_id: string) {
+    return this.seriesService.getCourseTitle(series_id);
+  }
+
+  @Get('lesson-title')
+  @HttpCode(HttpStatus.OK)
+  async getLessonTitle(@Query('course_id') course_id: string) {
+    return this.seriesService.getLessonTitle(course_id);
+  }
+
   @Get('courses')
   @HttpCode(HttpStatus.OK)
   async findAllCourses(
