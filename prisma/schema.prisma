@@ -595,17 +595,23 @@ model TeacherSection {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  section_type String
+  section_type SectionType
   title        String
   description  String?
   duration     String?
   release_date DateTime?
-  position     Int       @default(0)
-  status       String    @default("published") // scheduled, released, archived
-  view_count   Int       @default(0)
+  position     Int         @default(0)
+  status       String      @default("published") // scheduled, released, archived
+  view_count   Int         @default(0)
   file_url     String?
 
   @@map("teacher_sections")
+}
+
+enum SectionType {
+  SCRIPTURE
+  ANNOUNCEMENT
+  ENCOURAGEMENT
 }
 
 model StudentFile {

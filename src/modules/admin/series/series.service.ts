@@ -1204,6 +1204,39 @@ export class SeriesService {
   }
 
   /**
+   * Upload large file with progress tracking
+   */
+  private async uploadLargeFileWithProgress(
+    key: string,
+    file: Express.Multer.File,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    try {
+      const fileSize = file.size;
+      let uploadedBytes = 0;
+
+      // Create readable stream from buffer (simulating chunked upload)
+      const stream = require('stream');
+      const bufferStream = new stream.PassThrough();
+      bufferStream.end(file.buffer);
+
+      // Use enhanced storage adapter
+      await SojebStorage.putLargeFile(key, bufferStream, (bytesWritten) => {
+        uploadedBytes = bytesWritten;
+        const progress = Math.round((uploadedBytes / fileSize) * 100);
+        if (onProgress) {
+          onProgress(progress);
+        }
+      });
+
+      this.logger.log(`Large file upload completed: ${key}`);
+    } catch (error) {
+      this.logger.error(`Error uploading large file: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  /**
    * Get file kind based on file extension
    */
   private getFileKindFromFileName(fileName: string): string {
@@ -1664,7 +1697,21 @@ export class SeriesService {
         const videoTitle = createLessonFileDto.title || files.videoFile.originalname.split('.')[0];
         title = videoTitle;
         videoFileName = StringHelper.generateLessonFileName(position, videoTitle, files.videoFile.originalname);
-        await SojebStorage.put(appConfig().storageUrl.lesson_file + videoFileName, files.videoFile.buffer);
+
+        // Check if file is large (>100MB) and use streaming upload
+        const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+        if (files.videoFile.size > LARGE_FILE_THRESHOLD) {
+          this.logger.log(`Uploading large video file: ${videoFileName} (${Math.round(files.videoFile.size / 1024 / 1024)}MB)`);
+          await this.uploadLargeFileWithProgress(
+            appConfig().storageUrl.lesson_file + videoFileName,
+            files.videoFile,
+            (progress) => {
+              this.logger.log(`Video upload progress: ${progress}%`);
+            }
+          );
+        } else {
+          await SojebStorage.put(appConfig().storageUrl.lesson_file + videoFileName, files.videoFile.buffer);
+        }
 
         const fileKind = this.getFileKind(files.videoFile.mimetype);
         primaryKind = fileKind;
@@ -1685,7 +1732,21 @@ export class SeriesService {
           title = docTitle;
         }
         docFileName = StringHelper.generateLessonFileName(position, docTitle, files.docFile.originalname);
-        await SojebStorage.put(appConfig().storageUrl.doc_file + docFileName, files.docFile.buffer);
+
+        // Check if file is large (>100MB) and use streaming upload
+        const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+        if (files.docFile.size > LARGE_FILE_THRESHOLD) {
+          this.logger.log(`Uploading large document file: ${docFileName} (${Math.round(files.docFile.size / 1024 / 1024)}MB)`);
+          await this.uploadLargeFileWithProgress(
+            appConfig().storageUrl.doc_file + docFileName,
+            files.docFile,
+            (progress) => {
+              this.logger.log(`Document upload progress: ${progress}%`);
+            }
+          );
+        } else {
+          await SojebStorage.put(appConfig().storageUrl.doc_file + docFileName, files.docFile.buffer);
+        }
 
         const docFileKind = this.getFileKind(files.docFile.mimetype);
         if (!files.videoFile) {
@@ -1920,6 +1981,7 @@ export class SeriesService {
     docFile?: Express.Multer.File
   ): Promise<SeriesResponse<any>> {
     try {
+
       // Check if lesson exists
       const existingLesson = await this.prisma.lessonFile.findUnique({
         where: { id: lessonId },

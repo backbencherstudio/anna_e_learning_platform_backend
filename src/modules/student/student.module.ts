@@ -10,6 +10,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { ContactModule } from './contact/contact.module';
 import { ScheduleEventModule } from './schedule-event/schedule-event.module';
 import { NotificationModule } from './notification/notification.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 ;
 
 @Module({
@@ -25,6 +26,7 @@ import { NotificationModule } from './notification/notification.module';
         ContactModule,
         ScheduleEventModule,
         NotificationModule,
+        DashboardModule,
     ],
 })
 export class StudentModule { }

@@ -32,4 +32,16 @@ export interface IStorage {
    * @param key
    */
   delete(key: string): Promise<any>;
+
+  /**
+   * Upload large file with streaming
+   * @param key
+   * @param stream
+   * @param onProgress
+   */
+  putLargeFile?(
+    key: string,
+    stream: NodeJS.ReadableStream,
+    onProgress?: (bytesWritten: number, totalBytes: number) => void
+  ): Promise<any>;
 }
