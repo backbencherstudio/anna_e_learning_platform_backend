@@ -600,10 +600,14 @@ model TeacherSection {
   description  String?
   duration     String?
   release_date DateTime?
+  is_released  Boolean     @default(false)
   position     Int         @default(0)
   status       String      @default("published") // scheduled, released, archived
   view_count   Int         @default(0)
   file_url     String?
+
+  release_status       String    @default("DRAFT") // DRAFT, SCHEDULED, PUBLISHED
+  scheduled_release_at DateTime?
 
   @@map("teacher_sections")
 }

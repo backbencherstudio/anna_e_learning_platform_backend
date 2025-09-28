@@ -13,8 +13,8 @@ export class ScheduleEventController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async list(@Req() req, @Query('from') from?: string, @Query('to') to?: string) {
+  async list(@Req() req, @Query('date') date?: string) {
     const userId = req.user.userId;
-    return this.scheduleEventService.listForEnrolledSeries(userId, from, to);
+    return this.scheduleEventService.listForEnrolledSeries(userId, date);
   }
 }

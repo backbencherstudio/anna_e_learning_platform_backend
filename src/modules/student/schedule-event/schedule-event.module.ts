@@ -5,5 +5,6 @@ import { ScheduleEventController } from './schedule-event.controller';
 @Module({
   controllers: [ScheduleEventController],
   providers: [ScheduleEventService],
+  exports: [ScheduleEventService],
 })
 export class ScheduleEventModule {}

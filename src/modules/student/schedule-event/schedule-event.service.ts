@@ -11,8 +11,7 @@ export class ScheduleEventService {
 
     async listForEnrolledSeries(
         studentId: string,
-        from?: DateLike,
-        to?: DateLike,
+        date?: DateLike,
     ) {
         try {
             // get student's active/completed enrollments
@@ -67,11 +66,13 @@ export class ScheduleEventService {
                 ].filter(Boolean),
             };
 
-            if (from || to) {
+            if (date) {
+                const startOfDay = new Date(new Date(date as any).setHours(0, 0, 0, 0));
+                const endOfDay = new Date(new Date(date as any).setHours(23, 59, 59, 999));
                 where.AND = [
-                    from ? { start_at: { gte: new Date(from!) } } : undefined,
-                    to ? { end_at: { lte: new Date(to!) } } : undefined,
-                ].filter(Boolean);
+                    { start_at: { gte: startOfDay } },
+                    { start_at: { lte: endOfDay } },
+                ];
             }
 
             const events = await this.prisma.scheduleEvent.findMany({
