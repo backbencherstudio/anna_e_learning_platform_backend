@@ -1,10 +1,11 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsIn } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, IsIn, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
+import { SectionType } from '@prisma/client';
 
 export class CreateTeacherSectionDto {
-    @IsString()
+    @IsEnum(SectionType)
     @IsNotEmpty()
-    section_type!: string; // e.g., video, article, quiz
+    section_type!: SectionType;
 
     @IsString()
     @IsNotEmpty()
