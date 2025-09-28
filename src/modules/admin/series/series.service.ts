@@ -446,7 +446,7 @@ export class SeriesService {
 
   async getSeriesTitle(): Promise<SeriesResponse<any>> {
     const series = await this.prisma.series.findMany({
-      select: { id: true, title: true, created_at: true },
+      select: { id: true, title: true, created_at: true, courses: { select: { id: true, title: true } } },
       orderBy: { created_at: 'desc' },
     });
 
@@ -460,7 +460,7 @@ export class SeriesService {
   async getCourseTitle(series_id: string): Promise<SeriesResponse<any>> {
     const course = await this.prisma.course.findMany({
       where: { series_id: series_id },
-      select: { id: true, title: true, created_at: true },
+      select: { id: true, title: true, created_at: true, lesson_files: { select: { id: true, title: true } } },
       orderBy: { created_at: 'desc' },
     });
 
