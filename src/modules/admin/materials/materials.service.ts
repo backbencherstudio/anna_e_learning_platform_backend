@@ -14,6 +14,22 @@ export class MaterialsService {
 
   constructor(private readonly prisma: PrismaService) { }
 
+  async getAllSeries() {
+    return this.prisma.series.findMany({
+      where: {
+        deleted_at: null,
+      },
+    });
+  }
+  async getAllCourses(series_id?: string) {
+    return this.prisma.course.findMany({
+      where: {
+        deleted_at: null,
+        series_id: series_id,
+      },
+    });
+  }
+
   /**
    * Create a new material with optional file upload
    */

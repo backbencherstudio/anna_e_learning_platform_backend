@@ -443,6 +443,48 @@ export class SeriesService {
     }
   }
 
+
+  async getSeriesTitle(): Promise<SeriesResponse<any>> {
+    const series = await this.prisma.series.findMany({
+      select: { id: true, title: true, created_at: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      message: 'Series title retrieved successfully',
+      data: series,
+    };
+  }
+
+  async getCourseTitle(series_id: string): Promise<SeriesResponse<any>> {
+    const course = await this.prisma.course.findMany({
+      where: { series_id: series_id },
+      select: { id: true, title: true, created_at: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      message: 'Course title retrieved successfully',
+      data: course,
+    };
+  }
+
+  async getLessonTitle(course_id: string): Promise<SeriesResponse<any>> {
+    const lesson = await this.prisma.lessonFile.findMany({
+      where: { course_id: course_id },
+      select: { id: true, title: true, created_at: true },
+      orderBy: { created_at: 'desc' },
+    });
+
+    return {
+      success: true,
+      message: 'Lesson title retrieved successfully',
+      data: lesson,
+    };
+  }
+
   async findAllCourses(page: number = 1, limit: number = 10, search?: string, series_id?: string): Promise<SeriesResponse<{ courses: any[]; pagination: any }>> {
     try {
       const skip = (page - 1) * limit;
@@ -1050,6 +1092,7 @@ export class SeriesService {
                 this.logger.warn(`Failed to delete course end video: ${error.message}`);
               }
             }
+
             // Delete lesson files
             if (course.lesson_files && course.lesson_files.length > 0) {
               for (const lessonFile of course.lesson_files) {
