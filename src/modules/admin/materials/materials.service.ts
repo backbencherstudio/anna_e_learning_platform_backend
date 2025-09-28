@@ -135,6 +135,7 @@ export class MaterialsService {
     series_id?: string,
     course_id?: string,
     type?: string,
+    lecture_type?: string,
   ): Promise<MaterialsResponse<{ materials: any[]; pagination: any }>> {
     try {
       this.logger.log('Fetching all materials');
@@ -165,6 +166,11 @@ export class MaterialsService {
       // Add type filter
       if (type) {
         where.type = type;
+      }
+
+      // Add lecture type filter
+      if (lecture_type) {
+        where.lecture_type = lecture_type;
       }
 
       const [materials, total] = await Promise.all([
