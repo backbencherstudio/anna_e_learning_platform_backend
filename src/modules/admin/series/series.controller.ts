@@ -3,7 +3,7 @@ import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { SeriesService } from './series.service';
 import { CreateSeriesDto } from './dto/create-series.dto';
 import { UpdateSeriesDto } from './dto/update-series.dto';
-import { multerConfig } from '../../../config/multer.config';
+import { multerConfig, largeFileMulterConfig } from '../../../config/multer.config';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateLessonFileDto } from './dto/create-lesson-file.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
@@ -164,7 +164,7 @@ export class SeriesController {
     FileFieldsInterceptor([
       { name: 'videoFile', maxCount: 1 },
       { name: 'docFile', maxCount: 1 },
-    ], multerConfig)
+    ], largeFileMulterConfig)
   )
   async createLessonFile(
     @Body() createLessonFileDto: CreateLessonFileDto,

@@ -51,4 +51,23 @@ export class StorageClass {
   public async delete(key: string) {
     return await this.adapter.delete(key);
   }
+
+  /**
+   * Upload large file with streaming
+   * @param key
+   * @param stream
+   * @param onProgress
+   * @returns
+   */
+  public async putLargeFile(
+    key: string,
+    stream: NodeJS.ReadableStream,
+    onProgress?: (bytesWritten: number, totalBytes: number) => void
+  ) {
+    if (this.adapter.putLargeFile) {
+      return await this.adapter.putLargeFile(key, stream, onProgress);
+    } else {
+      throw new Error('Large file upload not supported by this storage adapter');
+    }
+  }
 }

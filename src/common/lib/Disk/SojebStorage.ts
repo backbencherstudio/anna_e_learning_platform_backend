@@ -87,6 +87,22 @@ export class SojebStorage {
   }
 
   /**
+   * Upload large file with streaming
+   * @param key
+   * @param stream
+   * @param onProgress
+   * @returns
+   */
+  public static async putLargeFile(
+    key: string,
+    stream: NodeJS.ReadableStream,
+    onProgress?: (bytesWritten: number, totalBytes: number) => void
+  ): Promise<any> {
+    const disk = this.storageDisk();
+    return await disk.putLargeFile(key, stream, onProgress);
+  }
+
+  /**
    * process storage disk type
    * @returns
    */
