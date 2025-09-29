@@ -262,9 +262,9 @@ export class AssignmentService {
         where: {
           ...whereClause,
           is_published: true,
-          due_at: {
-            gte: new Date(),
-          },
+          // due_at: {
+          //   gte: new Date(),
+          // },
         },
         take: limit,
         select: {
