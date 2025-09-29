@@ -579,7 +579,8 @@ export class QuizService {
 
         if (shouldPublishImmediately) {
           publicationStatus = 'PUBLISHED';
-          updateData.published_at = now;
+          // Use the provided published_at date, not current time
+          updateData.published_at = publishAt || now;
         } else if (publishAt && publishAt > now) {
           publicationStatus = 'SCHEDULED';
           scheduledPublishAt = publishAt;
