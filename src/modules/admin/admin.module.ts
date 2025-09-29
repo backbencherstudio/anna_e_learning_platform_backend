@@ -17,6 +17,8 @@ import { QuizSubmissionModule } from './quiz-submission/quiz-submission.module';
 import { StudentFileModule } from './student-file/student-file.module';
 import { FeedbackModule } from './feedback/feedback.module';
 import { CardGeneratorModule } from './card-generator/card-generator.module';
+import { DashboardModule } from './dashboard/dashboard.module';
+import { ScheduleEventModule } from './schedule-event/schedule-event.module';
 
 @Module({
   imports: [
@@ -38,6 +40,8 @@ import { CardGeneratorModule } from './card-generator/card-generator.module';
     StudentFileModule,
     FeedbackModule,
     CardGeneratorModule,
+    DashboardModule,
+    ScheduleEventModule,
   ],
 })
 export class AdminModule { }

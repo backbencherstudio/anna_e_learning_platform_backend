@@ -7,6 +7,8 @@ import { QuizPublishService } from './quiz-publish.service';
 import { AssignmentPublishProcessor } from './processors/assignment-publish.processor';
 import { AssignmentPublishService } from './assignment-publish.service';
 import { PrismaModule } from '../../prisma/prisma.module';
+import { TeacherSectionPublishService } from './teacher-section-publish.service';
+import { TeacherSectionPublishProcessor } from './processors/teacher-section-publish.processor';
 
 @Module({
     imports: [
@@ -19,6 +21,9 @@ import { PrismaModule } from '../../prisma/prisma.module';
         BullModule.registerQueue({
             name: 'assignment-publish',
         }),
+        BullModule.registerQueue({
+            name: 'teacher-section-publish',
+        }),
         PrismaModule,
     ],
     providers: [
@@ -28,7 +33,16 @@ import { PrismaModule } from '../../prisma/prisma.module';
         QuizPublishService,
         AssignmentPublishProcessor,
         AssignmentPublishService,
+        TeacherSectionPublishProcessor,
+        TeacherSectionPublishService,
     ],
-    exports: [BullModule, SeriesPublishService, QuizPublishService, AssignmentPublishService],
+    exports: [
+        BullModule,
+        SeriesPublishService,
+        QuizPublishService,
+        AssignmentPublishService,
+        TeacherSectionPublishProcessor,
+        TeacherSectionPublishService,
+    ],
 })
 export class QueueModule { }

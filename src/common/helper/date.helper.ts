@@ -91,4 +91,47 @@ export class DateHelper {
 
     return date2Data.diff(date1Data, unit, float);
   }
+
+  /**
+   * Calculate remaining time in days, hours, and minutes
+   * @param dueDate - The due date
+   * @param currentDate - Current date (optional, defaults to now)
+   * @returns Object with days, hours, minutes, and formatted string
+   */
+  static getRemainingTime(dueDate: string | Date, currentDate?: string | Date) {
+    const due = dayjs(dueDate);
+    const now = currentDate ? dayjs(currentDate) : dayjs();
+
+    const diff = due.diff(now);
+
+    if (diff <= 0) {
+      return {
+        days: 0,
+        hours: 0,
+        minutes: 0,
+        total: 0,
+        formatted: 'Expired',
+        isExpired: true
+      };
+    }
+
+    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+
+    let formatted = '';
+    if (days > 0) formatted += `${days}d `;
+    if (hours > 0) formatted += `${hours}h `;
+    if (minutes > 0) formatted += `${minutes}m`;
+    if (!formatted) formatted = 'Less than 1 minute';  
+
+    return {
+      days,
+      hours,
+      minutes,
+      total: diff,
+      formatted: formatted.trim(),
+      isExpired: false
+    };
+  }
 }

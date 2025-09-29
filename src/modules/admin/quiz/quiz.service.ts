@@ -97,9 +97,9 @@ export class QuizService {
         where: {
           ...whereClause,
           is_published: true,
-          due_at: {
-            gte: new Date(),
-          },
+          // due_at: {
+          //   gte: new Date(),
+          // },
         },
         take: limit,
         select: {
@@ -132,7 +132,6 @@ export class QuizService {
         },
         orderBy: { created_at: 'desc' },
       });
-
       // Calculate total enrolled students for each series
       const seriesEnrollmentCounts = new Map<string, number>();
       for (const quiz of submittedQuizzes) {
@@ -169,10 +168,10 @@ export class QuizService {
       });
 
       const publishedQuizzesWithStats = publishedQuizzes.map(quiz => {
-        const remainingTime = quiz.due_at ? DateHelper.diff(quiz.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
+        const remainingTime = quiz.due_at ? DateHelper.getRemainingTime(quiz.due_at) : null;
         return {
           ...quiz,
-          remaining_time: remainingTime,
+          remaining_time: remainingTime.formatted,
         };
       });
 
@@ -330,48 +329,48 @@ export class QuizService {
 
       this.logger.log(`Quiz created successfully with ID: ${result.id}`);
 
-         // Create schedule event
-         await ScheduleEventRepository.createEvent({
-          quiz_id: result.id,
-          title: result.title,
-          start_at: result.published_at,
-          end_at: result.due_at,
-          type: ScheduleType.QUIZ,
+      // Create schedule event
+      await ScheduleEventRepository.createEvent({
+        quiz_id: result.id,
+        title: result.title,
+        start_at: result.published_at,
+        end_at: result.due_at,
+        type: ScheduleType.QUIZ,
+        series_id: result.series_id,
+        course_id: result.course_id,
+      });
+
+      // Get all enrolled students in the series
+      const enrolledStudents = await this.prisma.enrollment.findMany({
+        where: {
           series_id: result.series_id,
-          course_id: result.course_id,
+          deleted_at: null,
+          status: { in: ['ACTIVE', 'COMPLETED'] as any },
+        },
+        select: { user_id: true },
+      });
+
+      // Send notifications to all enrolled students
+      const notificationPromises = enrolledStudents.map(student =>
+        NotificationRepository.createNotification({
+          receiver_id: student.user_id,
+          text: `New quiz "${result.title}" has been published`,
+          type: 'quiz',
+          entity_id: result.id,
+        })
+      );
+
+      await Promise.all(notificationPromises);
+
+      // Send real-time notifications to all enrolled students
+      enrolledStudents.forEach(student => {
+        this.messageGateway.server.emit('notification', {
+          receiver_id: student.user_id,
+          text: `New quiz "${result.title}" has been published`,
+          type: 'quiz',
+          entity_id: result.id,
         });
-  
-        // Get all enrolled students in the series
-        const enrolledStudents = await this.prisma.enrollment.findMany({
-          where: {
-            series_id: result.series_id,
-            deleted_at: null,
-            status: { in: ['ACTIVE', 'COMPLETED'] as any },
-          },
-          select: { user_id: true },
-        });
-  
-        // Send notifications to all enrolled students
-        const notificationPromises = enrolledStudents.map(student =>
-          NotificationRepository.createNotification({
-            receiver_id: student.user_id,
-            text: `New quiz "${result.title}" has been published`,
-            type: 'quiz',
-            entity_id: result.id,
-          })
-        );
-  
-        await Promise.all(notificationPromises);
-  
-        // Send real-time notifications to all enrolled students
-        enrolledStudents.forEach(student => {
-          this.messageGateway.server.emit('notification', {
-            receiver_id: student.user_id,
-            text: `New quiz "${result.title}" has been published`,
-            type: 'quiz',
-            entity_id: result.id,
-          });
-        });
+      });
 
       return {
         success: true,
@@ -580,7 +579,8 @@ export class QuizService {
 
         if (shouldPublishImmediately) {
           publicationStatus = 'PUBLISHED';
-          updateData.published_at = now;
+          // Use the provided published_at date, not current time
+          updateData.published_at = publishAt || now;
         } else if (publishAt && publishAt > now) {
           publicationStatus = 'SCHEDULED';
           scheduledPublishAt = publishAt;
@@ -647,6 +647,8 @@ export class QuizService {
       // Handle queue scheduling after transaction is committed
       if (updatedQuiz.publication_status === 'SCHEDULED' && updatedQuiz.scheduled_publish_at) {
         try {
+          // Ensure any existing scheduled job is removed before re-scheduling to a new time
+          await this.quizPublishService.cancelScheduledPublication(id);
           await this.quizPublishService.scheduleQuizPublication(id, updatedQuiz.scheduled_publish_at);
           this.logger.log(`Quiz ${id} scheduled for publication at ${updatedQuiz.scheduled_publish_at.toISOString()}`);
         } catch (error) {

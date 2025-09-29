@@ -5,12 +5,16 @@ import { UpdateTeacherSectionDto } from './dto/update-teacher-section.dto';
 import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
 import { StringHelper } from '../../../common/helper/string.helper';
+import { TeacherSectionPublishService } from '../../queue/teacher-section-publish.service';
 
 @Injectable()
 export class TeacherSectionService {
   private readonly logger = new Logger(TeacherSectionService.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly teacherSectionPublishService: TeacherSectionPublishService,
+  ) { }
 
   async create(createDto: CreateTeacherSectionDto, file?: Express.Multer.File) {
     try {
@@ -22,6 +26,26 @@ export class TeacherSectionService {
         await SojebStorage.put(appConfig().storageUrl.teacher_section_file + storedFileName, file.buffer);
       }
 
+      const now = new Date();
+      const releaseAt = createDto.release_date ? new Date(createDto.release_date) : undefined;
+
+      // decide release status
+      let release_status: string = 'DRAFT';
+      let scheduled_release_at: Date = null;
+      let is_released = false;
+      let status = createDto.status ?? 'published';
+
+      if (releaseAt && releaseAt > now) {
+        release_status = 'SCHEDULED';
+        scheduled_release_at = releaseAt;
+        is_released = false;
+        status = 'scheduled';
+      } else if (releaseAt && releaseAt <= now) {
+        release_status = 'PUBLISHED';
+        is_released = true;
+        status = 'published';
+      }
+
       const section = await this.prisma.teacherSection.create({
         data: {
           section_type: createDto.section_type,
@@ -30,10 +54,22 @@ export class TeacherSectionService {
           duration: createDto.duration,
           release_date: createDto.release_date ? new Date(createDto.release_date) : undefined,
           position: createDto.position ?? 0,
-          status: createDto.status ?? 'published',
+          status,
+          is_released,
+          release_status,
+          scheduled_release_at,
           file_url: storedFileName,
         },
       });
+
+      // schedule if needed
+      if (release_status === 'SCHEDULED' && scheduled_release_at) {
+        try {
+          await this.teacherSectionPublishService.scheduleRelease(section.id, scheduled_release_at);
+        } catch (e) {
+          this.logger.warn(`Failed to schedule teacher section release: ${e.message}`);
+        }
+      }
 
       return {
         success: true,
@@ -132,6 +168,29 @@ export class TeacherSectionService {
         await SojebStorage.put(appConfig().storageUrl.teacher_section_file + storedFileName, file.buffer);
       }
 
+      const now = new Date();
+
+      // compute updated release state
+      let release_status = exists.release_status;
+      let scheduled_release_at = exists.scheduled_release_at as any;
+      let is_released = exists.is_released as any;
+      let status = updateDto.status ?? exists.status;
+
+      if (updateDto.release_date) {
+        const newReleaseAt = new Date(updateDto.release_date);
+        if (newReleaseAt > now) {
+          release_status = 'SCHEDULED';
+          scheduled_release_at = newReleaseAt as any;
+          is_released = false;
+          status = 'scheduled';
+        } else {
+          release_status = 'PUBLISHED';
+          scheduled_release_at = null as any;
+          is_released = true;
+          status = 'published';
+        }
+      }
+
       const section = await this.prisma.teacherSection.update({
         where: { id },
         data: {
@@ -141,10 +200,24 @@ export class TeacherSectionService {
           duration: updateDto.duration ?? exists.duration,
           release_date: updateDto.release_date ? new Date(updateDto.release_date) : exists.release_date,
           position: updateDto.position ?? exists.position,
-          status: updateDto.status ?? exists.status,
+          status,
+          is_released,
+          release_status,
+          scheduled_release_at,
           file_url: storedFileName,
         },
       });
+
+      // manage schedule
+      try {
+        if (release_status === 'SCHEDULED' && scheduled_release_at) {
+          await this.teacherSectionPublishService.scheduleRelease(id, scheduled_release_at);
+        } else {
+          await this.teacherSectionPublishService.cancelScheduledRelease(id);
+        }
+      } catch (e) {
+        this.logger.warn(`Failed to manage teacher section schedule: ${e.message}`);
+      }
 
       return {
         success: true,

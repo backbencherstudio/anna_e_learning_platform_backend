@@ -6,15 +6,14 @@ import { Roles } from '../../../common/guard/role/roles.decorator';
 import { Role } from '../../../common/guard/role/role.enum';
 
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.STUDENT)
-@Controller('student/schedule-event')
+@Roles(Role.ADMIN)
+@Controller('admin/schedule-event')
 export class ScheduleEventController {
   constructor(private readonly scheduleEventService: ScheduleEventService) { }
 
   @Get()
   @HttpCode(HttpStatus.OK)
   async list(@Req() req, @Query('date') date?: string) {
-    const userId = req.user.userId;
-    return this.scheduleEventService.listForEnrolledSeries(userId, date);
+    return this.scheduleEventService.listScheduleEvents(date);
   }
 }

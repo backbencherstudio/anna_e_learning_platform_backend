@@ -220,6 +220,7 @@ export class AssignmentService {
           is_published: true,
           created_at: true,
           total_marks: true,
+          series_id: true,
           series: {
             select: {
               id: true,
@@ -262,9 +263,9 @@ export class AssignmentService {
         where: {
           ...whereClause,
           is_published: true,
-          due_at: {
-            gte: new Date(),
-          },
+          // due_at: {
+          //   gte: new Date(),
+          // },
         },
         take: limit,
         select: {
@@ -322,23 +323,29 @@ export class AssignmentService {
         orderBy: { created_at: 'desc' },
       });
 
+      // Calculate total enrolled students for each series
+      const seriesEnrollmentCounts = new Map<string, number>();
+      for (const assignment of assignmentsWithSubmissions) {
+        if (assignment.series_id && !seriesEnrollmentCounts.has(assignment.series_id)) {
+          const enrolledCount = await this.prisma.enrollment.count({
+            where: {
+              series_id: assignment.series_id,
+              deleted_at: null,
+              status: { in: ['ACTIVE', 'COMPLETED'] },
+            },
+          });
+          seriesEnrollmentCounts.set(assignment.series_id, enrolledCount);
+        }
+      }
+
       // Calculate submission statistics for assignments
       const assignmentsWithStats = assignmentsWithSubmissions.map(assignment => {
         const submittedCount = assignment.submissions.filter(s => s.status === 'SUBMITTED' || s.status === 'GRADED').length;
-        const gradedCount = assignment.submissions.filter(s => s.status === 'GRADED').length;
-        const remainingTime = assignment.due_at ? DateHelper.diff(assignment.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
-        const averageScore = gradedCount > 0
-          ? assignment.submissions
-            .filter(s => s.status === 'GRADED')
-            .reduce((sum, s) => sum + (s.total_grade || 0), 0) / gradedCount
-          : 0;
-
+        const totalStudents = assignment.series_id ? seriesEnrollmentCounts.get(assignment.series_id) || 0 : 0;
         return {
           ...assignment,
           submission_count: submittedCount,
-          graded_count: gradedCount,
-          average_score: averageScore,
-          remaining_time: remainingTime,
+          total_students: totalStudents,
         };
       });
 
@@ -562,7 +569,8 @@ export class AssignmentService {
 
         if (shouldPublishImmediately) {
           publicationStatus = 'PUBLISHED';
-          updateData.published_at = now;
+          // Use the provided published_at date, not current time
+          updateData.published_at = publishAt || now;
         } else if (publishAt && publishAt > now) {
           publicationStatus = 'SCHEDULED';
           scheduledPublishAt = publishAt;
@@ -616,6 +624,7 @@ export class AssignmentService {
       // Handle queue scheduling after transaction is committed
       if (updatedAssignment.publication_status === 'SCHEDULED' && updatedAssignment.scheduled_publish_at) {
         try {
+          await this.assignmentPublishService.cancelScheduledPublication(id);
           await this.assignmentPublishService.scheduleAssignmentPublication(id, updatedAssignment.scheduled_publish_at);
           this.logger.log(`Assignment ${id} scheduled for publication at ${updatedAssignment.scheduled_publish_at.toISOString()}`);
         } catch (error) {

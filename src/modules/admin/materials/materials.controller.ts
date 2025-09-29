@@ -36,11 +36,12 @@ export class MaterialsController {
     @Query('series_id') series_id?: string,
     @Query('course_id') course_id?: string,
     @Query('type') type?: string,
+    @Query('lecture_type') lecture_type?: string,
   ): Promise<MaterialsResponse<{ materials: any[]; pagination: any }>> {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
 
-    return this.materialsService.findAll(pageNum, limitNum, search, series_id, course_id, type);
+    return this.materialsService.findAll(pageNum, limitNum, search, series_id, course_id, type, lecture_type);
   }
 
   @Get('series/:series_id')
