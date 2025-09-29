@@ -647,6 +647,8 @@ export class QuizService {
       // Handle queue scheduling after transaction is committed
       if (updatedQuiz.publication_status === 'SCHEDULED' && updatedQuiz.scheduled_publish_at) {
         try {
+          // Ensure any existing scheduled job is removed before re-scheduling to a new time
+          await this.quizPublishService.cancelScheduledPublication(id);
           await this.quizPublishService.scheduleQuizPublication(id, updatedQuiz.scheduled_publish_at);
           this.logger.log(`Quiz ${id} scheduled for publication at ${updatedQuiz.scheduled_publish_at.toISOString()}`);
         } catch (error) {

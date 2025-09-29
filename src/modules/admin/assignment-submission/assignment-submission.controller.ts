@@ -24,10 +24,12 @@ export class AssignmentSubmissionController {
     @Query('assignment_id') assignment_id?: string,
     @Query('student_id') student_id?: string,
     @Query('status') status?: string,
+    @Query('series_id') series_id?: string,
+    @Query('course_id') course_id?: string,
   ) {
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
-    return this.assignmentSubmissionService.findAll(pageNum, limitNum, search, assignment_id, student_id, status);
+    return this.assignmentSubmissionService.findAll(pageNum, limitNum, search, assignment_id, student_id, status, series_id, course_id);
   }
 
   @Get(':id')

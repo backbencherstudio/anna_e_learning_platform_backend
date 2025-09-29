@@ -16,6 +16,8 @@ export class QuizSubmissionService {
         quiz_id?: string,
         student_id?: string,
         status?: string,
+        series_id?: string,
+        course_id?: string,
     ) {
         try {
             const skip = (page - 1) * limit;
@@ -27,6 +29,19 @@ export class QuizSubmissionService {
             if (quiz_id) where.quiz_id = quiz_id;
             if (student_id) where.student_id = student_id;
             if (status) where.status = status;
+            if (series_id) {
+                where.quiz = {
+                    ...(where.assignment || {}),
+                    series_id: series_id,
+                };
+            }
+
+            if (course_id) {
+                where.quiz = {
+                    ...(where.assignment || {}),
+                    course_id: course_id,
+                };
+            }
             if (search) {
                 where.OR = [
                     { student: { name: { contains: search, mode: 'insensitive' as any } } },
