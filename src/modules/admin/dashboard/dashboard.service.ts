@@ -1,49 +1,41 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { ScheduleEventService } from '../schedule-event/schedule-event.service';
 
 @Injectable()
 export class DashboardService {
     private readonly logger = new Logger(DashboardService.name);
-    constructor(private readonly prisma: PrismaService) {
+    constructor(private readonly prisma: PrismaService, private readonly scheduleEventService: ScheduleEventService) {
     }
 
-    async getDashboard() {
+    /**
+     * Get total dashboard stats
+     */
+    async getTotalDashboardStats() {
         try {
-            this.logger.log('Fetching dashboard data');
 
             const today = new Date();
             const startOfDay = new Date(today.setHours(0, 0, 0, 0));
             const endOfDay = new Date(today.setHours(23, 59, 59, 999));
-            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-            // Execute all queries in parallel for better performance
-            const [
-                // Revenue metrics
-                totalRevenueResult,
-                // Traffic today
-                newEnrollmentsToday,
-                newUsersToday,
-                completedPaymentsToday,
-                // User metrics
-                totalUsers,
-                activeUsers,
-                students,
-                admins,
-                // Platform metrics
-                totalSeries,
-                totalCourses,
-                totalEnrollments,
-            ] = await Promise.all([
-                // Total revenue from completed payments
-                this.prisma.paymentTransaction.aggregate({
-                    where: {
-                        status: 'completed',
-                        deleted_at: null,
-                    },
-                    _sum: {
-                        paid_amount: true,
-                    },
-                }),
+
+            const revenue = await this.prisma.paymentTransaction.aggregate({
+                where: {
+                    status: 'succeeded',
+                    deleted_at: null,
+                },
+                _sum: {
+                    paid_amount: true,
+                },
+            });
+
+            const totalUsers = await this.prisma.user.count({
+                where: {
+                    deleted_at: null,
+                },
+            });
+
+            const [newEnrollments, newUsers, completedPayments] = await Promise.all([
                 // New enrollments today
                 this.prisma.enrollment.count({
                     where: {
@@ -75,84 +67,115 @@ export class DashboardService {
                         deleted_at: null,
                     },
                 }),
-                // Total users
-                this.prisma.user.count({
-                    where: {
-                        deleted_at: null,
+            ]);
+
+            return {
+                total_revenue: revenue._sum.paid_amount || 0,
+                total_users: totalUsers,
+                new_enrollments: newEnrollments,
+                new_users: newUsers,
+                completed_payments: completedPayments,
+            };
+        } catch (error) {
+            this.logger.error('Error calculating total revenue:', error);
+            return {
+                success: false,
+                message: 'Failed to fetch total revenue',
+                error: error.message,
+            };
+        }
+    }
+
+
+    /**
+     * Get revenue growth data for charts
+     */
+    async getRevenueGrowth() {
+        try {
+            const now = new Date();
+            const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+            const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+
+            // Get current month revenue
+            const currentMonthRevenue = await this.prisma.paymentTransaction.aggregate({
+                where: {
+                    status: 'succeeded',
+                    deleted_at: null,
+                    created_at: {
+                        gte: currentMonthStart,
                     },
-                }),
-                // Active users (with recent activity)
-                this.prisma.user.count({
-                    where: {
-                        deleted_at: null,
-                        updated_at: {
-                            gte: thirtyDaysAgo,
-                        },
+                },
+                _sum: {
+                    paid_amount: true,
+                },
+            });
+
+            // Get last month revenue
+            const lastMonthRevenue = await this.prisma.paymentTransaction.aggregate({
+                where: {
+                    status: 'succeeded',
+                    deleted_at: null,
+                    created_at: {
+                        gte: lastMonthStart,
+                        lte: lastMonthEnd,
                     },
-                }),
-                // Students
-                this.prisma.user.count({
-                    where: {
-                        deleted_at: null,
-                        type: 'student',
-                    },
-                }),
-                // Admins
-                this.prisma.user.count({
-                    where: {
-                        deleted_at: null,
-                        type: 'admin',
-                    },
-                }),
-                // Total published series
-                this.prisma.series.count({
-                    where: {
-                        deleted_at: null,
-                        visibility: 'PUBLISHED',
-                    },
-                }),
-                // Total courses
-                this.prisma.course.count({
-                    where: {
-                        deleted_at: null,
-                    },
-                }),
-                // Total enrollments
-                this.prisma.enrollment.count({
-                    where: {
-                        deleted_at: null,
-                        status: { in: ['ACTIVE', 'COMPLETED'] },
-                    },
-                }),
+                },
+                _sum: {
+                    paid_amount: true,
+                },
+            });
+
+            const currentRevenue = Number(currentMonthRevenue._sum.paid_amount || 0);
+            const previousRevenue = Number(lastMonthRevenue._sum.paid_amount || 0);
+
+            // Calculate growth percentage
+            let growthPercentage = 0;
+            if (previousRevenue > 0) {
+                growthPercentage = ((currentRevenue - previousRevenue) / previousRevenue) * 100;
+            } else if (currentRevenue > 0) {
+                growthPercentage = 100; // 100% growth if no previous revenue
+            }
+
+            return {
+                current_period_revenue: currentRevenue,
+                previous_period_revenue: previousRevenue,
+                growth_percentage: Math.round(growthPercentage * 100) / 100, // Round to 2 decimal places
+                growth_direction: growthPercentage >= 0 ? 'up' : 'down',
+                current_period_label: 'This period',
+                previous_period_label: 'Last period',
+            };
+        } catch (error) {
+            this.logger.error('Error calculating revenue growth:', error);
+            return {
+                success: false,
+                message: 'Failed to fetch revenue growth data',
+                error: error.message,
+            };
+        }
+    }
+
+
+    /**
+     * Get dashboard data by calling individual methods
+     */
+    async getDashboard() {
+        try {
+            this.logger.log('Fetching dashboard data');
+
+            const [dashboardStats, revenueGrowth, scheduleEvents] = await Promise.all([
+                this.getTotalDashboardStats(),
+                this.getRevenueGrowth(),
+                this.scheduleEventService.listScheduleEvents(),
             ]);
 
             return {
                 success: true,
                 message: 'Dashboard data retrieved successfully',
                 data: {
-                    revenue: {
-                        total_revenue: totalRevenueResult._sum.paid_amount || 0,
-                        currency: 'USD',
-                    },
-                    traffic: {
-                        new_enrollments: newEnrollmentsToday,
-                        new_users: newUsersToday,
-                        completed_payments: completedPaymentsToday,
-                        date: today.toISOString().split('T')[0],
-                    },
-                    users: {
-                        total_users: totalUsers,
-                        active_users: activeUsers,
-                        students: students,
-                        admins: admins,
-                    },
-                    metrics: {
-                        total_series: totalSeries,
-                        total_courses: totalCourses,
-                        total_enrollments: totalEnrollments,
-                        total_revenue: totalRevenueResult._sum.paid_amount || 0,
-                    },
-                    generated_at: new Date().toISOString(),
+                    dashboardStats,
+                  //  revenueGrowth,
+                  scheduleEvents,
                 },
             };
         } catch (error) {
@@ -161,27 +184,6 @@ export class DashboardService {
                 success: false,
                 message: 'Failed to fetch dashboard data',
                 error: error.message,
-                data: {
-                    revenue: { total_revenue: 0, currency: 'USD' },
-                    traffic: {
-                        new_enrollments: 0,
-                        new_users: 0,
-                        completed_payments: 0,
-                        date: new Date().toISOString().split('T')[0],
-                    },
-                    users: {
-                        total_users: 0,
-                        active_users: 0,
-                        students: 0,
-                        admins: 0,
-                    },
-                    metrics: {
-                        total_series: 0,
-                        total_courses: 0,
-                        total_enrollments: 0,
-                        total_revenue: 0,
-                    },
-                },
             };
         }
     }
