@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, UseGuards, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { DashboardService } from './dashboard.service';
 import { RolesGuard } from 'src/common/guard/role/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
@@ -13,7 +13,9 @@ export class DashboardController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async getDashboard() {
-    return this.dashboardService.getDashboard();
+  async getDashboard(
+    @Query('date') date?: string,
+  ) {
+    return this.dashboardService.getDashboard(date);
   }
 }

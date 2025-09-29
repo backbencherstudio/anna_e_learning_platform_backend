@@ -1,11 +1,18 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ScheduleEventService } from '../schedule-event/schedule-event.service';
+import { AssignmentService } from '../assignment/assignment.service';
+import { QuizService } from '../quiz/quiz.service';
 
 @Injectable()
 export class DashboardService {
     private readonly logger = new Logger(DashboardService.name);
-    constructor(private readonly prisma: PrismaService, private readonly scheduleEventService: ScheduleEventService) {
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly scheduleEventService: ScheduleEventService,
+        private readonly assignmentService: AssignmentService,
+        private readonly quizService: QuizService,
+    ) {
     }
 
     /**
@@ -155,18 +162,21 @@ export class DashboardService {
         }
     }
 
+    
 
     /**
      * Get dashboard data by calling individual methods
      */
-    async getDashboard() {
+    async getDashboard(date?: string) {
         try {
             this.logger.log('Fetching dashboard data');
 
-            const [dashboardStats, revenueGrowth, scheduleEvents] = await Promise.all([
+            const [dashboardStats, revenueGrowth, scheduleEvents , assignment, quiz] = await Promise.all([
                 this.getTotalDashboardStats(),
                 this.getRevenueGrowth(),
-                this.scheduleEventService.listScheduleEvents(),
+                this.scheduleEventService.listScheduleEvents(date),
+                this.assignmentService.getDashboard(),
+                this.quizService.getDashboard(),
             ]);
 
             return {
@@ -175,7 +185,9 @@ export class DashboardService {
                 data: {
                     dashboardStats,
                   //  revenueGrowth,
-                  scheduleEvents,
+                  scheduleEvents: scheduleEvents.data.events,
+                  assignment: assignment.data.assignments_with_submissions,
+                  quiz: quiz.data.submitted_quizzes,
                 },
             };
         } catch (error) {

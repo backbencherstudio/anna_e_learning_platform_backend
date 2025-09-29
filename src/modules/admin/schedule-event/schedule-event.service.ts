@@ -11,6 +11,8 @@ export class ScheduleEventService {
 
     async listScheduleEvents(
         date?: DateLike,
+        page: number = 1,
+        limit: number = 10,
     ) {
         try {
             // base where for admin: list all scheduled events, optionally filter by date
@@ -28,21 +30,42 @@ export class ScheduleEventService {
                 ];
             }
 
-            const events = await this.prisma.scheduleEvent.findMany({
-                where,
-                orderBy: { start_at: 'asc' },
-                include: {
-                    assignment: { select: { id: true, title: true } },
-                    quiz: { select: { id: true, title: true } },
-                    course: { select: { id: true, title: true } },
-                    series: { select: { id: true, title: true } },
-                },
-            });
+            const skip = (page - 1) * limit;
+
+            const [events, total] = await Promise.all([
+                this.prisma.scheduleEvent.findMany({
+                    where,
+                    orderBy: { start_at: 'asc' },
+                    skip,
+                    take: limit,
+                    include: {
+                        assignment: { select: { id: true, title: true } },
+                        quiz: { select: { id: true, title: true } },
+                        course: { select: { id: true, title: true } },
+                        series: { select: { id: true, title: true } },
+                    },
+                }),
+                this.prisma.scheduleEvent.count({ where }),
+            ]);
+
+            const totalPages = Math.ceil(total / limit);
+            const hasNextPage = page < totalPages;
+            const hasPreviousPage = page > 1;
 
             return {
                 success: true,
                 message: 'Schedule events fetched',
-                data: { events },
+                data: {
+                    events,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        totalPages,
+                        hasNextPage,
+                        hasPreviousPage,
+                    },
+                },
             };
         } catch (error) {
             this.logger.error(`Failed to list schedule events: ${error.message}`, error.stack);
