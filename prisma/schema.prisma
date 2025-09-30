@@ -1158,8 +1158,8 @@ model CardGenerator {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title           String
-  message         String
+  title           String?
+  message         String?
   image           String
   recipient_name  String?
   recipient_email String?
