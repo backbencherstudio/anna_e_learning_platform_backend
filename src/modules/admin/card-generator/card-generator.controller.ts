@@ -40,19 +40,6 @@ export class CardGeneratorController {
     return this.cardGeneratorService.findAll(pageNum, limitNum, search, student_id);
   }
 
-  @Get('students')
-  @HttpCode(HttpStatus.OK)
-  async findAllStudents(
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
-    @Query('search') search?: string,
-  ): Promise<CardGeneratorResponse<{ students: any[]; pagination: any }>> {
-    const pageNum = page ? parseInt(page, 10) : 1;
-    const limitNum = limit ? parseInt(limit, 10) : 10;
-
-    return this.cardGeneratorService.findAllStudents(pageNum, limitNum, search);
-  }
-
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Param('id') id: string): Promise<CardGeneratorResponse<any>> {
