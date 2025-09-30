@@ -19,6 +19,7 @@ import { FeedbackModule } from './feedback/feedback.module';
 import { CardGeneratorModule } from './card-generator/card-generator.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ScheduleEventModule } from './schedule-event/schedule-event.module';
+import { StudentModule } from './student/student.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { ScheduleEventModule } from './schedule-event/schedule-event.module';
     CardGeneratorModule,
     DashboardModule,
     ScheduleEventModule,
+    StudentModule,
   ],
 })
 export class AdminModule { }

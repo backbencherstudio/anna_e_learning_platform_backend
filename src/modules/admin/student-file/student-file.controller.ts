@@ -17,6 +17,26 @@ import { Role } from 'src/common/guard/role/role.enum';
 export class StudentFileController {
   constructor(private readonly studentFileService: StudentFileService) { }
 
+
+  @Get('student')
+  @HttpCode(HttpStatus.OK)
+  findAllStudent(
+    @Query('page') page: string,
+    @Query('limit') limit: string,
+    @Query('search') search?: string,
+    @Query('series_id') series_id?: string,
+    @Query('course_id') course_id?: string,
+  ) {
+    return this.studentFileService.findAllStudent(
+      Number(page) || 1,
+      Number(limit) || 10,
+      search,
+      series_id,
+      course_id,
+    );
+  }
+
+
   @Get()
   @HttpCode(HttpStatus.OK)
   async findAll(

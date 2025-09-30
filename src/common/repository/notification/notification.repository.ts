@@ -32,7 +32,8 @@ export class NotificationRepository {
       | 'blog'
       | 'contact'
       | 'assignment'
-      | 'quiz';
+      | 'quiz'
+      | 'info';
     entity_id?: string;
   }) {
     const notificationEventData = {};
