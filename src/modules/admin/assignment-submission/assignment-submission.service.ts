@@ -63,10 +63,12 @@ export class AssignmentSubmissionService {
             graded_at: true,
             created_at: true,
             submitted_at: true,
+            percentage: true,
             assignment: {
               select: {
                 id: true,
                 title: true,
+                total_marks: true,
                 series: { select: { id: true, title: true } },
                 course: { select: { id: true, title: true } },
               },
@@ -131,6 +133,7 @@ export class AssignmentSubmissionService {
           id: true,
           status: true,
           total_grade: true,
+          percentage: true,
           overall_feedback: true,
           graded_by_id: true,
           graded_at: true,
@@ -268,9 +271,6 @@ export class AssignmentSubmissionService {
         }
       }
 
-      // Calculate total grade
-      const totalGrade = answers.reduce((sum, answer) => sum + answer.marks_awarded, 0);
-
       // Update submission and answers in a transaction
       const result = await this.prisma.$transaction(async (prisma) => {
         // Update individual answers
@@ -295,11 +295,30 @@ export class AssignmentSubmissionService {
           });
         }
 
-        // Update submission with total grade and status
+        // Recalculate total grade from ALL answers after upserts
+        const allAnswers = await prisma.assignmentAnswer.findMany({
+          where: { submission_id: submissionId },
+          select: { marks_awarded: true },
+        });
+
+        const recalculatedTotalGrade = allAnswers.reduce((sum, a) => sum + a.marks_awarded, 0);
+
+        // Fetch assignment total marks to compute percentage
+        const assignmentMeta = await prisma.assignment.findUnique({
+          where: { id: submission.assignment_id },
+          select: { total_marks: true },
+        });
+        const totalMarks = assignmentMeta?.total_marks ?? 0;
+        const percentage = totalMarks && totalMarks > 0
+          ? Math.round((recalculatedTotalGrade / totalMarks) * 10000) / 100
+          : 0;
+
+        // Update submission with total grade, percentage and status
         const updatedSubmission = await prisma.assignmentSubmission.update({
           where: { id: submissionId },
           data: {
-            total_grade: totalGrade,
+            total_grade: recalculatedTotalGrade,
+            percentage,
             overall_feedback: overall_feedback || null,
             graded_at: new Date(),
             status: 'GRADED',
@@ -307,6 +326,7 @@ export class AssignmentSubmissionService {
           select: {
             id: true,
             total_grade: true,
+            percentage: true,
             overall_feedback: true,
             graded_by_id: true,
             graded_at: true,
@@ -338,7 +358,7 @@ export class AssignmentSubmissionService {
         return updatedSubmission;
       });
 
-      this.logger.log(`Assignment submission ${submissionId} graded successfully with total grade: ${totalGrade}`);
+      this.logger.log(`Assignment submission ${submissionId} graded successfully with total grade: ${result.total_grade}, percentage: ${result.percentage}`);
 
       return {
         success: true,
@@ -434,17 +454,29 @@ export class AssignmentSubmissionService {
 
         const newTotalGrade = allAnswers.reduce((sum, answer) => sum + answer.marks_awarded, 0);
 
+        // Fetch assignment total marks to compute percentage
+        const assignmentMeta = await prisma.assignment.findUnique({
+          where: { id: submission.assignment_id },
+          select: { total_marks: true },
+        });
+        const totalMarks = assignmentMeta?.total_marks ?? 0;
+        const percentage = totalMarks && totalMarks > 0
+          ? Math.round((newTotalGrade / totalMarks) * 10000) / 100
+          : 0;
+
         // Update submission with recalculated total grade
         const updatedSubmission = await prisma.assignmentSubmission.update({
           where: { id: submissionId },
           data: {
             total_grade: newTotalGrade,
+            percentage,
             overall_feedback: overall_feedback !== undefined ? overall_feedback : undefined,
             graded_at: new Date(), // Update grading timestamp
           },
           select: {
             id: true,
             total_grade: true,
+            percentage: true,
             overall_feedback: true,
             graded_by_id: true,
             graded_at: true,

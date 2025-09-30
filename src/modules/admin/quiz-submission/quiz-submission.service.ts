@@ -182,6 +182,13 @@ export class QuizSubmissionService {
                                     prompt: true,
                                     points: true,
                                     position: true,
+                                    answers: {
+                                        select: {
+                                            id: true,
+                                            option: true,
+                                            is_correct: true,
+                                        },
+                                    },
                                 },
                             },
                         },

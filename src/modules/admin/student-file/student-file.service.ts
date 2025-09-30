@@ -15,6 +15,97 @@ export class StudentFileService {
   constructor(private readonly prisma: PrismaService) { }
 
 
+  async findAllStudent(
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    series_id?: string,
+    course_id?: string,
+  ) {
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      type: 'student',
+      deleted_at: null,
+    };
+
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: 'insensitive' as any } },
+        { email: { contains: search, mode: 'insensitive' as any } },
+        { username: { contains: search, mode: 'insensitive' as any } },
+      ];
+    }
+
+    if (series_id || course_id) {
+      where.enrollments = {
+        some: {
+          ...(series_id ? { series_id } : {}),
+          ...(course_id ? { series: { courses: { some: { id: course_id } } } } : {}),
+        },
+      } as any;
+    }
+
+    const [students, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { created_at: 'desc' },
+        select: {
+          id: true,
+          name: true,
+          first_name: true,
+          last_name: true,
+          email: true,
+          username: true,
+          avatar: true,
+          created_at: true,
+          student_files: {
+            select: {
+              id: true,
+              url: true,
+              section_type: true,
+              week_number: true,
+              series: { select: { id: true, title: true, } },
+              course: { select: { id: true, title: true, } },
+            },
+          }
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    for (const student of students) {
+      if (student.student_files) {
+        student.student_files.forEach(file => {
+          file['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + file.url);
+        });
+      }
+    }
+    // add avatar url to students
+    students.forEach(student => {
+      if (student.avatar) {
+        student['avatar_url'] = SojebStorage.url(appConfig().storageUrl.avatar + student.avatar);
+      }
+    });
+
+
+    const totalPages = Math.ceil(total / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    return {
+      success: true,
+      message: 'Students fetched',
+      data: {
+        students,
+        pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage },
+      },
+    };
+  }
+
+
   /**
    * Get all student files with pagination and filtering
    */
@@ -137,6 +228,68 @@ export class StudentFileService {
     }
   }
 
+
+  /**
+   * Get student files by student id with optional section_type filter and pagination
+   */
+  async getStudentFilesByStudentId(
+    student_id: string,
+    section_type?: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    try {
+      this.logger.log(`Fetching student files for student: ${student_id}`);
+
+      const skip = (page - 1) * limit;
+      const where: any = { deleted_at: null, student_id };
+      if (section_type) where.section_type = section_type;
+
+      const [studentFiles, total] = await Promise.all([
+        this.prisma.studentFile.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            series: { select: { id: true, title: true } },
+            course: { select: { id: true, title: true } },
+            student: { select: { id: true, name: true, email: true, avatar: true } },
+          },
+          orderBy: [{ week_number: 'asc' }, { created_at: 'desc' }],
+        }),
+        this.prisma.studentFile.count({ where }),
+      ]);
+
+      for (const sf of studentFiles) {
+        if (sf.url) {
+          sf['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + sf.url);
+        }
+        if (sf.student?.avatar) {
+          sf.student['avatar_url'] = SojebStorage.url(appConfig().storageUrl.avatar + sf.student.avatar);
+        }
+      }
+
+      const totalPages = Math.ceil(total / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
+      return {
+        success: true,
+        message: 'Student files retrieved successfully',
+        data: {
+          student_files: studentFiles,
+          pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage },
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching student files for student ${student_id}: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: 'Failed to fetch student files',
+        error: error.message,
+      };
+    }
+  }
   /**
    * Get a single student file by ID
    */

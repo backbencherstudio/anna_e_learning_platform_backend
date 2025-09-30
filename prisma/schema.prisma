@@ -818,6 +818,7 @@ model AssignmentSubmission {
   student_id       String
   status           SubmissionStatus @default(DRAFT)
   total_grade      Int              @default(0)
+  percentage       Float            @default(0.0)
   overall_feedback String?
   graded_by_id     String?
   graded_at        DateTime?
@@ -1116,6 +1117,7 @@ enum ScheduleType {
   QUIZ
   EXAM
   MEETING
+  CLASS
 }
 
 model ScheduleEvent {
@@ -1126,6 +1128,7 @@ model ScheduleEvent {
 
   title       String
   description String?
+  class_link  String?
   start_at    DateTime
   end_at      DateTime
   timezone    String?
@@ -1133,10 +1136,8 @@ model ScheduleEvent {
   type        ScheduleType   @default(GENERAL)
   metadata    Json?
 
-  // who sees it / owner
-  user_id String?
-  user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
+  user_id       String?
+  user          User?       @relation(fields: [user_id], references: [id], onDelete: SetNull)
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)
@@ -1147,7 +1148,6 @@ model ScheduleEvent {
   series_id     String?
   series        Series?     @relation(fields: [series_id], references: [id], onDelete: SetNull)
 
-  @@index([user_id, start_at])
   @@index([status, start_at])
   @@map("schedule_events")
 }
@@ -1158,8 +1158,8 @@ model CardGenerator {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title           String
-  message         String
+  title           String?
+  message         String?
   image           String
   recipient_name  String?
   recipient_email String?

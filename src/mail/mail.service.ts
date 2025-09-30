@@ -100,4 +100,30 @@ export class MailService {
       console.log(error);
     }
   }
+
+  async sendStudentNotificationEmail(params: {
+    to: string;
+    recipientName?: string;
+    subject?: string;
+    message: string;
+  }) {
+    try {
+      const from = `${process.env.APP_NAME} <${appConfig().mail.from}>`;
+      const subject = params.subject || 'Notification from ' + (appConfig().app.name || 'our platform');
+
+      await this.queue.add('sendStudentNotificationEmail', {
+        to: params.to,
+        from,
+        subject,
+        template: 'student-notification',
+        context: {
+          name: params.recipientName || '',
+          message: params.message,
+          appName: appConfig().app.name,
+        },
+      });
+    } catch (error) {
+      console.log(error);
+    }
+  }
 }

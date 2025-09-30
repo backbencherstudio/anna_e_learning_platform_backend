@@ -2,11 +2,11 @@ import { IsString, IsOptional, IsEmail, IsNotEmpty } from 'class-validator';
 
 export class CreateCardGeneratorDto {
     @IsString()
-    @IsNotEmpty()
+    @IsOptional()
     title: string;
 
     @IsString()
-    @IsNotEmpty()
+    @IsOptional()
     message: string;
 
     @IsString()
