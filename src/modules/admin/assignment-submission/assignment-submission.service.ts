@@ -67,6 +67,7 @@ export class AssignmentSubmissionService {
               select: {
                 id: true,
                 title: true,
+                total_marks: true,
                 series: { select: { id: true, title: true } },
                 course: { select: { id: true, title: true } },
               },

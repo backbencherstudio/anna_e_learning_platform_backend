@@ -203,7 +203,7 @@ export class AssignmentService {
           submissions: {
             some: {
               status: {
-                in: ['SUBMITTED'],
+                in: ['SUBMITTED', 'GRADED'],
               },
               submitted_at: {
                 not: null,
