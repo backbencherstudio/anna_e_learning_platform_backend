@@ -66,6 +66,20 @@ export class QuizSubmissionService {
                         graded_at: true,
                         feedback: true,
                         created_at: true,
+                        answers: {
+                            select: {
+                                id: true,
+                                is_correct: true,
+                                points_earned: true,
+                                question: {
+                                    select: {
+                                        id: true,
+                                        prompt: true,
+                                        points: true,
+                                    },
+                                },
+                            },
+                        },
                         quiz: {
                             select: {
                                 id: true,

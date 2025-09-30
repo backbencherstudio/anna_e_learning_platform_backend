@@ -112,7 +112,7 @@ model User {
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
   feedbacks              Feedback[]
-  schedules              ScheduleEvent[]
+  schedules              ScheduleEvent[]        @relation("ScheduleEventUser")
   card_generators        CardGenerator[]
 
   @@map("users")
@@ -1116,6 +1116,7 @@ enum ScheduleType {
   QUIZ
   EXAM
   MEETING
+  CLASS
 }
 
 model ScheduleEvent {
@@ -1126,6 +1127,7 @@ model ScheduleEvent {
 
   title       String
   description String?
+  class_link  String?
   start_at    DateTime
   end_at      DateTime
   timezone    String?
@@ -1133,10 +1135,7 @@ model ScheduleEvent {
   type        ScheduleType   @default(GENERAL)
   metadata    Json?
 
-  // who sees it / owner
-  user_id String?
-  user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
+  user_ids      User[]      @relation("ScheduleEventUser")
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)
@@ -1147,7 +1146,6 @@ model ScheduleEvent {
   series_id     String?
   series        Series?     @relation(fields: [series_id], references: [id], onDelete: SetNull)
 
-  @@index([user_id, start_at])
   @@index([status, start_at])
   @@map("schedule_events")
 }
