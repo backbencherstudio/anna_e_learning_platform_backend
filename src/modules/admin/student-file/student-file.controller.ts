@@ -61,6 +61,19 @@ export class StudentFileController {
     return this.studentFileService.findOne(id);
   }
 
+  @Get('by-student/:student_id')
+  @HttpCode(HttpStatus.OK)
+  async getByStudent(
+    @Param('student_id') student_id: string,
+    @Query('section_type') section_type?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
+    return this.studentFileService.getStudentFilesByStudentId(student_id, section_type, pageNum, limitNum);
+  }
+
   @Patch(':id')
   @HttpCode(HttpStatus.OK)
   @UseInterceptors(FileInterceptor('file'))

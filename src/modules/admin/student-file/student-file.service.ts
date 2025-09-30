@@ -226,6 +226,68 @@ export class StudentFileService {
     }
   }
 
+
+  /**
+   * Get student files by student id with optional section_type filter and pagination
+   */
+  async getStudentFilesByStudentId(
+    student_id: string,
+    section_type?: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
+    try {
+      this.logger.log(`Fetching student files for student: ${student_id}`);
+
+      const skip = (page - 1) * limit;
+      const where: any = { deleted_at: null, student_id };
+      if (section_type) where.section_type = section_type;
+
+      const [studentFiles, total] = await Promise.all([
+        this.prisma.studentFile.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            series: { select: { id: true, title: true } },
+            course: { select: { id: true, title: true } },
+            student: { select: { id: true, name: true, email: true, avatar: true } },
+          },
+          orderBy: [{ week_number: 'asc' }, { created_at: 'desc' }],
+        }),
+        this.prisma.studentFile.count({ where }),
+      ]);
+
+      for (const sf of studentFiles) {
+        if (sf.url) {
+          sf['file_url'] = SojebStorage.url(appConfig().storageUrl.student_file + sf.url);
+        }
+        if (sf.student?.avatar) {
+          sf.student['avatar_url'] = SojebStorage.url(appConfig().storageUrl.avatar + sf.student.avatar);
+        }
+      }
+
+      const totalPages = Math.ceil(total / limit);
+      const hasNextPage = page < totalPages;
+      const hasPreviousPage = page > 1;
+
+      return {
+        success: true,
+        message: 'Student files retrieved successfully',
+        data: {
+          student_files: studentFiles,
+          pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage },
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error fetching student files for student ${student_id}: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: 'Failed to fetch student files',
+        error: error.message,
+      };
+    }
+  }
   /**
    * Get a single student file by ID
    */
