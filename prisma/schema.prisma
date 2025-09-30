@@ -112,7 +112,7 @@ model User {
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
   feedbacks              Feedback[]
-  schedules              ScheduleEvent[]        @relation("ScheduleEventUser")
+  schedules              ScheduleEvent[]
   card_generators        CardGenerator[]
 
   @@map("users")
@@ -818,6 +818,7 @@ model AssignmentSubmission {
   student_id       String
   status           SubmissionStatus @default(DRAFT)
   total_grade      Int              @default(0)
+  percentage       Float            @default(0.0)
   overall_feedback String?
   graded_by_id     String?
   graded_at        DateTime?
@@ -1135,7 +1136,8 @@ model ScheduleEvent {
   type        ScheduleType   @default(GENERAL)
   metadata    Json?
 
-  user_ids      User[]      @relation("ScheduleEventUser")
+  user_id       String?
+  user          User?       @relation(fields: [user_id], references: [id], onDelete: SetNull)
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)
