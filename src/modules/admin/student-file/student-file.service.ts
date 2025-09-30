@@ -67,8 +67,10 @@ export class StudentFileService {
               url: true,
               section_type: true,
               week_number: true,
+              series: { select: { id: true, title: true, } },
+              course: { select: { id: true, title: true, } },
             },
-          },
+          }
         },
       }),
       this.prisma.user.count({ where }),

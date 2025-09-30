@@ -51,7 +51,7 @@ export class FeedbackService {
             created_at: true,
             updated_at: true,
             course: { select: { id: true, title: true } },
-            user: { select: { id: true, name: true, avatar: true } },
+            user: { select: { id: true, name: true, email: true, avatar: true } },
           },
           orderBy: { created_at: 'desc' },
         }),
