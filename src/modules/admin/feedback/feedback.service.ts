@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CreateFeedbackDto } from './dto/create-feedback.dto';
 import { UpdateFeedbackDto } from './dto/update-feedback.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -93,10 +93,10 @@ export class FeedbackService {
     }
   }
 
-  async findOne( id: string) {
+  async findOne(id: string) {
     try {
       const feedback = await this.prisma.feedback.findFirst({
-        where: {  deleted_at: null },
+        where: { id, deleted_at: null },
         select: {
           id: true,
           week_number: true,
@@ -108,6 +108,7 @@ export class FeedbackService {
           created_at: true,
           updated_at: true,
           course: { select: { id: true, title: true } },
+          user: { select: { id: true, name: true, email: true, avatar: true } },
         },
       });
       if (!feedback) throw new NotFoundException('Feedback not found');
@@ -122,7 +123,7 @@ export class FeedbackService {
     }
   }
 
-  async update( id: string, dto: UpdateFeedbackDto, file?: Express.Multer.File) {
+  async update(id: string, dto: UpdateFeedbackDto, file?: Express.Multer.File) {
     try {
       const exists = await this.prisma.feedback.findFirst({ where: { id, deleted_at: null }, select: { id: true, file_url: true } });
       if (!exists) throw new NotFoundException('Feedback not found');
@@ -159,22 +160,60 @@ export class FeedbackService {
     }
   }
 
+  // async remove(userId: string, id: string) {
+  //   try {
+  //     const exists = await this.prisma.feedback.findFirst({ where: { id, user_id: userId, deleted_at: null }, select: { id: true, file_url: true } });
+  //     if (!exists) throw new NotFoundException('Feedback not found');
+  //     await this.prisma.feedback.delete({ where: { id } });
+  //     // delete stored file if any
+  //     if (exists.file_url) {
+  //       await SojebStorage.delete(appConfig().storageUrl.feedback_file + exists.file_url);
+  //     }
+  //     return { success: true, message: 'Feedback deleted', data: { id } };
+  //   } catch (error) {
+  //     if (error instanceof NotFoundException) throw error;
+  //     this.logger.error(`Error deleting feedback ${id}: ${error.message}`, error.stack);
+  //     return { success: false, message: 'Failed to delete feedback', error: error.message };
+  //   }
+  // }
+
+
   async remove(userId: string, id: string) {
     try {
-      const exists = await this.prisma.feedback.findFirst({ where: { id, user_id: userId, deleted_at: null }, select: { id: true, file_url: true } });
-      if (!exists) throw new NotFoundException('Feedback not found');
-      await this.prisma.feedback.delete({ where: { id } });
-      // delete stored file if any
-      if (exists.file_url) {
-        await SojebStorage.delete(appConfig().storageUrl.feedback_file + exists.file_url);
+      // find the feedback
+      const feedback = await this.prisma.feedback.findFirst({
+        where: { id, deleted_at: null },
+        select: { id: true, file_url: true, user_id: true },
+      });
+
+      if (!feedback) throw new NotFoundException('Feedback not found');
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { type: true },
+      });
+
+      if (!user) throw new NotFoundException('User not found');
+
+      if (feedback.user_id !== userId && user.type !== 'admin') {
+        throw new ForbiddenException('You do not have permission to delete this feedback');
       }
+
+      await this.prisma.feedback.delete({ where: { id } });
+      
+      if (feedback.file_url) {
+        await SojebStorage.delete(appConfig().storageUrl.feedback_file + feedback.file_url);
+      }
+
       return { success: true, message: 'Feedback deleted', data: { id } };
     } catch (error) {
-      if (error instanceof NotFoundException) throw error;
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) throw error;
+
       this.logger.error(`Error deleting feedback ${id}: ${error.message}`, error.stack);
       return { success: false, message: 'Failed to delete feedback', error: error.message };
     }
   }
+
 
   async approve(id: string) {
     try {
@@ -192,6 +231,25 @@ export class FeedbackService {
       if (error instanceof NotFoundException) throw error;
       this.logger.error(`Error approving feedback ${id}: ${error.message}`, error.stack);
       return { success: false, message: 'Failed to approve feedback', error: error.message };
+    }
+  }
+
+  async reject(id: string) {
+    try {
+      const exists = await this.prisma.feedback.findUnique({ where: { id }, select: { id: true } });
+      if (!exists) throw new NotFoundException('Feedback not found');
+
+      const updated = await this.prisma.feedback.update({
+        where: { id },
+        data: { status: 'reject' },
+        select: { id: true, status: true },
+      });
+
+      return { success: true, message: 'Feedback rejected', data: updated };
+    } catch (error) {
+      if (error instanceof NotFoundException) throw error;
+      this.logger.error(`Error rejecting feedback ${id}: ${error.message}`, error.stack);
+      return { success: false, message: 'Failed to reject feedback', error: error.message };
     }
   }
 }
