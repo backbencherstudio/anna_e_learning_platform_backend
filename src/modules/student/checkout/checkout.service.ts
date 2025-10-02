@@ -331,7 +331,7 @@ export class CheckoutService {
                 where: { series_id: checkout.series_id || undefined },
                 select: { id: true, price: true },
             });
-            
+
             const newTotal = seriesCourses.reduce((sum, c) => {
                 const effective = courseIdsToZero.has(c.id) ? 0 : Number(c.price || 0);
                 return sum + effective;
@@ -339,7 +339,7 @@ export class CheckoutService {
 
             const updatedCheckout = await this.prisma.checkout.update({
                 where: { id: checkout.id },
-                data: { total_price: newTotal, status: 'CODE_APPLIED' },
+                data: { total_price: newTotal, status: 'CODE_APPLIED', type: 'SCHOLARSHIP' },
             });
 
             // return courses with display_price (virtual zero for scholarship courses)

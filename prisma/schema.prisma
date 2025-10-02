@@ -876,6 +876,12 @@ enum EnrollmentStatus {
   EXPIRED
 }
 
+enum EnrollType {
+  PAID
+  SCHOLARSHIP
+  FREE
+}
+
 model Enrollment {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
@@ -887,6 +893,7 @@ model Enrollment {
   checkout_id String?
 
   status       EnrollmentStatus @default(ACTIVE)
+  enroll_type  EnrollType       @default(PAID)
   enrolled_at  DateTime         @default(now())
   completed_at DateTime?
   expires_at   DateTime?
@@ -1005,6 +1012,7 @@ model Checkout {
   deleted_at  DateTime?
   status      String?
   total_price Decimal?
+  type        String?   @default("paid") // paid, free  scholarship
 
   user_id String?
   user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1030,7 +1038,7 @@ model ScholarshipCode {
   name             String?
   // The description of the scholarship - Not necessary 
   description      String? @db.Text
-  scholarship_type String? @default("free_student")
+  scholarship_type String? @default("scholarship")
   series_id        String?
   series           Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
 

@@ -4,6 +4,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { StripePayment } from '../../../common/lib/Payment/stripe/StripePayment';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
 import { SeriesService } from '../series/series.service';
+import { EnrollType } from '@prisma/client';
 
 
 @Injectable()
@@ -37,6 +38,7 @@ export class EnrollmentService {
                         series_id: checkout.series_id,
                         status: 'ACTIVE',
                         payment_status: 'pending',
+                        enroll_type: checkout.type as EnrollType,
                     },
                 });
             }

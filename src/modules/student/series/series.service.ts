@@ -20,7 +20,7 @@ export class SeriesService {
             // Base where clause for enrolled series with completed payment
             const enrollmentWhere = {
                 user_id: userId,
-                status: 'ACTIVE' as any,
+                status: { in: ['ACTIVE', 'COMPLETED'] as any },
                 payment_status: 'completed',
                 deleted_at: null,
             };
@@ -127,6 +127,7 @@ export class SeriesService {
                     enrollment: {
                         id: enrollment.id,
                         enrolled_at: enrollment.enrolled_at,
+                        status: enrollment.status,
                         progress_percentage: enrollment.progress_percentage,
                         last_accessed_at: enrollment.last_accessed_at,
                     },
@@ -686,6 +687,7 @@ export class SeriesService {
                 },
                 data: {
                     progress_percentage: progressPercentage,
+                    status: 'COMPLETED' as any,
                     last_accessed_at: new Date(),
                     updated_at: new Date(),
                 },
