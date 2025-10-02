@@ -1012,7 +1012,7 @@ model Checkout {
   deleted_at  DateTime?
   status      String?
   total_price Decimal?
-  type        String?   @default("paid") // paid, free  scholarship
+  type        String?   @default("PAID") // PAID, FREE, SCHOLARSHIP
 
   user_id String?
   user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)

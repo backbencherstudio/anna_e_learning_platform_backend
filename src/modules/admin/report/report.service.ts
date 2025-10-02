@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { EnrollType, EnrollmentStatus } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ScheduleEventService } from '../schedule-event/schedule-event.service';
 import { AssignmentService } from '../assignment/assignment.service';
@@ -86,19 +87,322 @@ export class ReportService {
         }
     }
 
-     /**
-     * Get series progress report data
+    /**
+     * List enrollments with user and series info (admin report)
      */
-     async getSeriesProgress(seriesId?: string) {
+    async listEnrollments(params?: {
+        series_id?: string;
+        user_id?: string;
+        status?: EnrollmentStatus;
+        enroll_type?: EnrollType;
+        payment_status?: string;
+        search?: string; // search in user.name/email or series.title
+        page?: number;
+        limit?: number;
+    }) {
+        const page = Math.max(1, Number(params?.page) || 1);
+        const limit = Math.max(1, Math.min(100, Number(params?.limit) || 10));
+        const skip = (page - 1) * limit;
+
+        const where: any = {
+            deleted_at: null,
+            ...(params?.series_id ? { series_id: params.series_id } : {}),
+            ...(params?.user_id ? { user_id: params.user_id } : {}),
+            ...(params?.status ? { status: params.status } : {}),
+            ...(params?.enroll_type ? { enroll_type: params.enroll_type } : {}),
+            ...(params?.payment_status ? { payment_status: params.payment_status } : {}),
+        };
+
+        // text search across user name/email and series title
+        if (params?.search) {
+            where.OR = [
+                { user: { name: { contains: params.search, mode: 'insensitive' } } },
+                { user: { email: { contains: params.search, mode: 'insensitive' } } },
+                { series: { title: { contains: params.search, mode: 'insensitive' } } },
+            ];
+        }
+
+        const [total, items] = await Promise.all([
+            this.prisma.enrollment.count({ where }),
+            this.prisma.enrollment.findMany({
+                where,
+                orderBy: { created_at: 'desc' },
+                skip,
+                take: limit,
+                select: {
+                    id: true,
+                    status: true,
+                    enroll_type: true,
+                    payment_status: true,
+                    paid_amount: true,
+                    paid_currency: true,
+                    progress_percentage: true,
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                            email: true,
+                            phone_number: true,
+                            date_of_birth: true,
+                            address: true,
+                        },
+                    },
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                           course_type: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        return {
+            success: true,
+            message: 'Enrollments retrieved successfully',
+            data: {
+                enrollments: items,
+                pagination: {
+                    total,
+                    page,
+                    limit,
+                    totalPages: Math.ceil(total / limit) || 1,
+                    hasNextPage: page < (Math.ceil(total / limit) || 1),
+                    hasPreviousPage: page > 1,
+                },
+            },
+        };
+    }
+
+    /**
+     * Payment overview for series enrollments
+     */
+    async getPaymentOverview(seriesId?: string, page: number = 1, limit: number = 10) {
+        try {
+            const baseWhere = {
+                deleted_at: null as Date | null,
+                ...(seriesId ? { series_id: seriesId } : {}),
+            };
+
+            const safePage = Math.max(1, Number(page) || 1);
+            const safeLimit = Math.max(1, Math.min(100, Number(limit) || 10));
+            const skip = (safePage - 1) * safeLimit;
+
+            const [
+                totalStudents,
+                fullyPaid,
+                sponsored,
+                freeEnrolled,
+                revenueAgg,
+            ] = await Promise.all([
+                this.prisma.enrollment.count({
+                    where: {
+                        ...baseWhere,
+                        status: { in: [EnrollmentStatus.ACTIVE, EnrollmentStatus.COMPLETED] },
+                    },
+                }),
+                this.prisma.enrollment.count({
+                    where: {
+                        ...baseWhere,
+                        enroll_type: EnrollType.PAID,
+                        payment_status: 'completed',
+                    },
+                }),
+                this.prisma.enrollment.count({
+                    where: {
+                        ...baseWhere,
+                        enroll_type: EnrollType.SCHOLARSHIP,
+                        payment_status: 'completed',
+                    },
+                }),
+                this.prisma.enrollment.count({
+                    where: {
+                        ...baseWhere,
+                        enroll_type: EnrollType.FREE,
+                        payment_status: 'completed',
+                    },
+                }),
+                this.prisma.paymentTransaction.aggregate({
+                    where: {
+                        deleted_at: null,
+                        status: { in: ['succeeded', 'completed'] as any },
+                        ...(seriesId
+                            ? { enrollment: { series_id: seriesId } }
+                            : {}),
+                    },
+                    _sum: { paid_amount: true },
+                }),
+            ]);
+
+            const donutTotal = Math.max(totalStudents, fullyPaid + sponsored + freeEnrolled);
+            const pct = (n: number) => (donutTotal > 0 ? Math.round((n / donutTotal) * 100) : 0);
+
+            const fullyPaidData = await this.prisma.enrollment.findMany({
+                where: {
+                    ...baseWhere,
+                    enroll_type: EnrollType.PAID,
+                    payment_status: 'completed',
+                },
+                orderBy: { updated_at: 'desc' },
+                skip,
+                take: safeLimit,
+                select: {
+                    id: true,
+                    enroll_type: true,
+                    payment_status: true,
+                    paid_amount: true,
+                    updated_at: true,
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
+                },
+            });
+
+            const sponsoredData = await this.prisma.enrollment.findMany({
+                where: {
+                    ...baseWhere,
+                    enroll_type: EnrollType.SCHOLARSHIP,
+                    payment_status: 'completed',
+                },
+                orderBy: { updated_at: 'desc' },
+                skip,
+                take: safeLimit,
+                select: {
+                    id: true,
+                    enroll_type: true,
+                    payment_status: true,
+                    paid_amount: true,
+                    updated_at: true,
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
+                },
+            });
+
+            const freeEnrolledData = await this.prisma.enrollment.findMany({
+
+                where: {
+                    ...baseWhere,
+                    enroll_type: EnrollType.FREE,
+                    payment_status: 'completed',
+                },
+                orderBy: { updated_at: 'desc' },
+                skip,
+                take: safeLimit,
+                select: {
+                    id: true,
+                    enroll_type: true,
+                    payment_status: true,
+                    paid_amount: true,
+                    updated_at: true,
+                    user: {
+                        select: {
+                            id: true,
+                            name: true,
+                        },
+                    },
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                        },
+                    },
+                },
+            });
+
+            return {
+                success: true,
+                message: 'Payment overview retrieved successfully',
+                data: {
+                    totals: {
+                        total_students: totalStudents,
+                        fully_paid: fullyPaid,
+                        sponsored: sponsored,
+                        free_enrolled: freeEnrolled,
+                        total_revenue: Number(revenueAgg._sum.paid_amount || 0),
+                    },
+                    overview: [
+                        { label: 'Full Paid', count: fullyPaid, percentage: pct(fullyPaid) },
+                        { label: 'Sponsored', count: sponsored, percentage: pct(sponsored) },
+                        { label: 'Free Enrolled', count: freeEnrolled, percentage: pct(freeEnrolled) },
+                    ],
+                    fully_paid: {
+                        items: fullyPaidData,
+                        pagination: {
+                            total: fullyPaid,
+                            page: safePage,
+                            limit: safeLimit,
+                            totalPages: Math.ceil(fullyPaid / safeLimit) || 1,
+                            hasNextPage: safePage < (Math.ceil(fullyPaid / safeLimit) || 1),
+                            hasPreviousPage: safePage > 1,
+                        },
+                    },
+                    sponsored: {
+                        items: sponsoredData,
+                        pagination: {
+                            total: sponsored,
+                            page: safePage,
+                            limit: safeLimit,
+                            totalPages: Math.ceil(sponsored / safeLimit) || 1,
+                            hasNextPage: safePage < (Math.ceil(sponsored / safeLimit) || 1),
+                            hasPreviousPage: safePage > 1,
+                        },
+                    },
+                    free_enrolled: {
+                        items: freeEnrolledData,
+                        pagination: {
+                            total: freeEnrolled,
+                            page: safePage,
+                            limit: safeLimit,
+                            totalPages: Math.ceil(freeEnrolled / safeLimit) || 1,
+                            hasNextPage: safePage < (Math.ceil(freeEnrolled / safeLimit) || 1),
+                            hasPreviousPage: safePage > 1,
+                        },
+                    },
+                },
+            };
+        } catch (error) {
+            this.logger.error('Error fetching payment overview:', error);
+            return {
+                success: false,
+                message: 'Failed to fetch payment overview',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+    * Get series progress report data
+    */
+    async getSeriesProgress(seriesId?: string) {
         try {
             this.logger.log('Fetching series progress report');
 
             // Get overall completion status distribution
             const completionStatus = await this.getSeriesCompletionStatusDistribution(seriesId);
-            
+
             // Get series completion rates
             const seriesCompletionRates = await this.getSeriesCompletionRates(seriesId);
-            
+
             // Get detailed series information
             const seriesDetails = await this.getSeriesDetails(seriesId);
 
