@@ -1,4 +1,5 @@
 services:
+  # Backend Application Service
   app:
     build:
       context: .
@@ -6,7 +7,7 @@ services:
     image: backend
     container_name: backend
     ports:
-      - "4000:4000"
+      - '4000:4000'
     environment:
       # Required for hot-reloading to work on Windows
       - CHOKIDAR_USEPOLLING=true
@@ -15,7 +16,7 @@ services:
 
       - NODE_ENV=development
       # host.docker.internal is the host machine's IP address
-      # - DATABASE_URL=postgresql://postgres:root@host.docker.internal/backend 
+      # - DATABASE_URL=postgresql://postgres:root@host.docker.internal/backend
       # for use the "postgres" "service" name
       - DATABASE_URL=postgresql://postgres:root@postgres/backend
 
@@ -25,19 +26,28 @@ services:
       - TURN_SERVER=turn:turnserver:3478
       - TURN_USERNAME=webrtc
       - TURN_PASSWORD=strongpassword
-    volumes:
+
+      # MinIO Configuration
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin123
+      - AWS_DEFAULT_REGION=us-east-1
+      - AWS_BUCKET=anna-elearning
+      - AWS_ENDPOINT=http://minio:9000
+    volumes:cle
       - .:/usr/src/app
       - /usr/src/app/node_modules
     depends_on:
       - postgres
       - redis
+      - minio
     command: yarn start:dev-swc
 
+  # PostgreSQL Database Service
   postgres:
     image: postgres:latest
     container_name: postgres
     ports:
-      - "5432:5432"
+      - '5433:5432'
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: root
@@ -45,26 +55,44 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  # Redis Cache Service
   redis:
     image: redis:latest
     container_name: redis
     ports:
-      - "6379:6379"
+      - '6380:6379'
 
+  # TURN Server for WebRTC
   turnserver:
     image: coturn/coturn
     container_name: turnserver
     restart: always
     ports:
-      - "3478:3478/udp"
-      - "3478:3478/tcp"
-      - "5349:5349/tcp" # TLS support
-      - "49152-65535:49152-65535/udp" # RTP relay ports
+      - '3478:3478/udp'
+      - '3478:3478/tcp'
+      - '5349:5349/tcp' # TLS support
+      - '49152-65535:49152-65535/udp' # RTP relay ports
     volumes:
       - ./dockerfiles/coturn/turnserver.conf:/etc/turnserver.conf
     environment:
       - TURN_USERNAME=webrtc
       - TURN_PASSWORD=strongpassword
 
+  # MinIO S3-Compatible Object Storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    restart: always
+    ports:
+      - '9000:9000' # API port
+      - '9001:9001' # Console port
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin123
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+
 volumes:
   postgres_data:
+  minio_data:

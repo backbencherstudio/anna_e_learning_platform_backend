@@ -34,9 +34,12 @@ export class ContactController {
   @HttpCode(HttpStatus.OK)
   updateStatus(
     @Param('id') id: string,
+    @Body() body: { status: string },
   ) {
-    return this.contactService.approve(id);
+    return this.contactService.updateStatus(id, body.status);
   }
+
+
 
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
