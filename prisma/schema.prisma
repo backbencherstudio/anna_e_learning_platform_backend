@@ -112,7 +112,7 @@ model User {
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
   feedbacks              Feedback[]
-  schedules              ScheduleEvent[]
+  schedules              ScheduleEvent[] @relation("ScheduleEventToUser")
   card_generators        CardGenerator[]
 
   @@map("users")
@@ -1144,8 +1144,8 @@ model ScheduleEvent {
   type        ScheduleType   @default(GENERAL)
   metadata    Json?
 
-  user_id       String?
-  user          User?       @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  user_ids String[]
+  users User[] @relation("ScheduleEventToUser")
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)

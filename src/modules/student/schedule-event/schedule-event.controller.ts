@@ -13,8 +13,27 @@ export class ScheduleEventController {
 
   @Get()
   @HttpCode(HttpStatus.OK)
-  async list(@Req() req, @Query('date') date?: string) {
+  async list(
+    @Req() req,
+    @Query('date') date?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+    @Query('type') type?: string,
+    @Query('status') status?: string,
+    @Query('seriesId') seriesId?: string,
+  ) {
     const userId = req.user.userId;
-    return this.scheduleEventService.listForEnrolledSeries(userId, date);
+    const pageNumber = page ? Math.max(1, parseInt(page, 10)) : 1;
+    const limitNumber = limit ? Math.max(1, Math.min(100, parseInt(limit, 10))) : 10; // Max 100 items per page
+
+    return this.scheduleEventService.listForEnrolledSeries(
+      userId,
+      date,
+      pageNumber,
+      limitNumber,
+      type,
+      status,
+      seriesId,
+    );
   }
 }

@@ -188,10 +188,11 @@ export class SeriesController {
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('search') search?: string,
+    @Query('course_type') course_type?: string,
   ) {
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
-    return this.seriesService.findAll(pageNum, limitNum, search);
+    return this.seriesService.findAll(pageNum, limitNum, search, course_type);
   }
 
   @Get('series-title')

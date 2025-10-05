@@ -5,7 +5,7 @@ import { UpdateQuizDto } from './dto/update-quiz.dto';
 import { QuizResponse } from './interfaces/quiz-response.interface';
 import { Quiz, QuizQuestion, QuestionAnswer, ScheduleType } from '@prisma/client';
 import { DateHelper } from 'src/common/helper/date.helper';
-import { QuizPublishService } from '../../queue/quiz-publish.service';
+import { QuizPublishService } from '../../queue/services/quiz-publish.service';
 import { ScheduleEventRepository } from 'src/common/repository/schedule-event/schedule-event.repository';
 import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
 import { MessageGateway } from 'src/modules/chat/message/message.gateway';
@@ -19,6 +19,188 @@ export class QuizService {
     private readonly quizPublishService: QuizPublishService,
     private readonly messageGateway: MessageGateway,
   ) { }
+
+
+  /**
+  * Create a new quiz with questions and answers
+  */
+  async create(createQuizDto: CreateQuizDto): Promise<QuizResponse<Quiz>> {
+    try {
+      this.logger.log('Creating new quiz');
+
+      // Validate that at least one question is provided
+      if (!createQuizDto.questions || createQuizDto.questions.length === 0) {
+        throw new BadRequestException('At least one question is required');
+      }
+
+      // Validate that each question has at least 2 answers
+      for (const question of createQuizDto.questions) {
+        if (!question.answers || question.answers.length < 2) {
+          throw new BadRequestException(`Question "${question.prompt}" must have at least 2 answers`);
+        }
+
+        // Validate that at least one answer is marked as correct
+        const hasCorrectAnswer = question.answers.some(answer => answer.is_correct);
+        if (!hasCorrectAnswer) {
+          throw new BadRequestException(`Question "${question.prompt}" must have at least one correct answer`);
+        }
+      }
+
+      // Calculate total marks if not provided
+      let totalMarks = createQuizDto.total_marks;
+      if (!totalMarks) {
+        totalMarks = createQuizDto.questions.reduce((sum, question) => sum + (question.points || 1), 0);
+      }
+
+      // Create quiz with questions and answers in a transaction
+      const result = await this.prisma.$transaction(async (prisma) => {
+        // Determine publication status and scheduling
+        const now = new Date();
+        const publishAt = createQuizDto.published_at ? new Date(createQuizDto.published_at) : undefined;
+        const shouldPublishImmediately = createQuizDto.is_published || (publishAt && publishAt <= now) || (!publishAt && !createQuizDto.due_at);
+
+        let publicationStatus = 'DRAFT';
+        let scheduledPublishAt = null;
+
+        if (shouldPublishImmediately) {
+          publicationStatus = 'PUBLISHED';
+        } else if (publishAt && publishAt > now) {
+          publicationStatus = 'SCHEDULED';
+          scheduledPublishAt = publishAt;
+        }
+
+        // Create the quiz
+        const quiz = await prisma.quiz.create({
+          data: {
+            title: createQuizDto.title,
+            instructions: createQuizDto.instructions,
+            total_marks: totalMarks,
+            due_at: createQuizDto.due_at ? new Date(createQuizDto.due_at) : undefined,
+            is_published: shouldPublishImmediately,
+            published_at: publishAt,
+            publication_status: publicationStatus,
+            scheduled_publish_at: scheduledPublishAt,
+            metadata: createQuizDto.metadata,
+            series_id: createQuizDto.series_id,
+            course_id: createQuizDto.course_id,
+          },
+        });
+
+        this.logger.log(`Created quiz with ID: ${quiz.id}`);
+
+        // Create questions and answers
+        for (const questionDto of createQuizDto.questions) {
+          const question = await prisma.quizQuestion.create({
+            data: {
+              quiz_id: quiz.id,
+              prompt: questionDto.prompt,
+              points: questionDto.points || 1,
+              position: questionDto.position || 0,
+            },
+          });
+
+          this.logger.log(`Created question with ID: ${question.id}`);
+
+          // Create answers for this question
+          for (const answerDto of questionDto.answers) {
+            const answer = await prisma.questionAnswer.create({
+              data: {
+                question_id: question.id,
+                option: answerDto.option,
+                position: answerDto.position || 0,
+                is_correct: answerDto.is_correct || false,
+              },
+            });
+
+            this.logger.log(`Created answer with ID: ${answer.id}, is_correct: ${answer.is_correct}`);
+          }
+        }
+        return quiz;
+      });
+
+      // Schedule publication if needed (outside transaction)
+      if (result.publication_status === 'SCHEDULED' && result.scheduled_publish_at) {
+        try {
+          await this.quizPublishService.scheduleQuizPublication(result.id, result.scheduled_publish_at);
+          this.logger.log(`Quiz ${result.id} scheduled for publication at ${result.scheduled_publish_at.toISOString()}`);
+        } catch (error) {
+          this.logger.error(`Failed to schedule quiz publication for ${result.id}: ${error.message}`, error.stack);
+          // Don't throw error here as the quiz was created successfully
+        }
+      } else if (!result.published_at && !result.due_at) {
+        await this.quizPublishService.publishQuizImmediately(result.id);
+      }
+      // Fetch the complete quiz with relations
+      const quizWithRelations = await this.prisma.quiz.findUnique({
+        where: { id: result.id },
+      });
+
+      this.logger.log(`Quiz created successfully with ID: ${result.id}`);
+
+      if (result.published_at && result.due_at) {
+        // Create schedule event
+        await ScheduleEventRepository.createEvent({
+          quiz_id: result.id,
+          title: result.title,
+          start_at: result.published_at,
+          end_at: result.due_at,
+          type: ScheduleType.QUIZ,
+          series_id: result.series_id,
+          course_id: result.course_id,
+        });
+      }
+
+      // Get all enrolled students in the series
+      const enrolledStudents = await this.prisma.enrollment.findMany({
+        where: {
+          series_id: result.series_id,
+          deleted_at: null,
+          status: { in: ['ACTIVE', 'COMPLETED'] as any },
+        },
+        select: { user_id: true },
+      });
+
+      // Send notifications to all enrolled students
+      const notificationPromises = enrolledStudents.map(student =>
+        NotificationRepository.createNotification({
+          receiver_id: student.user_id,
+          text: `New quiz "${result.title}" has been published`,
+          type: 'quiz',
+          entity_id: result.id,
+        })
+      );
+
+      await Promise.all(notificationPromises);
+
+      // Send real-time notifications to all enrolled students
+      enrolledStudents.forEach(student => {
+        this.messageGateway.server.emit('notification', {
+          receiver_id: student.user_id,
+          text: `New quiz "${result.title}" has been published`,
+          type: 'quiz',
+          entity_id: result.id,
+        });
+      });
+
+      return {
+        success: true,
+        message: 'Quiz created successfully',
+        data: quizWithRelations,
+      };
+    } catch (error) {
+      this.logger.error(`Error creating quiz: ${error.message}`, error.stack);
+
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to create quiz',
+        error: error.message,
+      };
+    }
+  }
 
   /**
    * Get quiz dashboard data - published and unpublished quizzes with submission stats
@@ -168,7 +350,7 @@ export class QuizService {
       });
 
       const publishedQuizzesWithStats = publishedQuizzes.map(quiz => {
-        const remainingTime = quiz.due_at ? DateHelper.getRemainingTime(quiz.due_at) : null;
+        const remainingTime = quiz.due_at ? DateHelper.getRemainingTime(quiz.due_at) : { formatted: '0 days' };
         return {
           ...quiz,
           remaining_time: remainingTime.formatted,
@@ -210,183 +392,6 @@ export class QuizService {
       return {
         success: false,
         message: 'Failed to fetch quiz dashboard data',
-        error: error.message,
-      };
-    }
-  }
-
-  /**
-   * Create a new quiz with questions and answers
-   */
-  async create(createQuizDto: CreateQuizDto): Promise<QuizResponse<Quiz>> {
-    try {
-      this.logger.log('Creating new quiz');
-
-      // Validate that at least one question is provided
-      if (!createQuizDto.questions || createQuizDto.questions.length === 0) {
-        throw new BadRequestException('At least one question is required');
-      }
-
-      // Validate that each question has at least 2 answers
-      for (const question of createQuizDto.questions) {
-        if (!question.answers || question.answers.length < 2) {
-          throw new BadRequestException(`Question "${question.prompt}" must have at least 2 answers`);
-        }
-
-        // Validate that at least one answer is marked as correct
-        const hasCorrectAnswer = question.answers.some(answer => answer.is_correct);
-        if (!hasCorrectAnswer) {
-          throw new BadRequestException(`Question "${question.prompt}" must have at least one correct answer`);
-        }
-      }
-
-      // Calculate total marks if not provided
-      let totalMarks = createQuizDto.total_marks;
-      if (!totalMarks) {
-        totalMarks = createQuizDto.questions.reduce((sum, question) => sum + (question.points || 1), 0);
-      }
-
-      // Create quiz with questions and answers in a transaction
-      const result = await this.prisma.$transaction(async (prisma) => {
-        // Determine publication status and scheduling
-        const now = new Date();
-        const publishAt = createQuizDto.published_at ? new Date(createQuizDto.published_at) : undefined;
-        const shouldPublishImmediately = createQuizDto.is_published || (publishAt && publishAt <= now);
-
-        let publicationStatus = 'DRAFT';
-        let scheduledPublishAt = null;
-
-        if (shouldPublishImmediately) {
-          publicationStatus = 'PUBLISHED';
-        } else if (publishAt && publishAt > now) {
-          publicationStatus = 'SCHEDULED';
-          scheduledPublishAt = publishAt;
-        }
-
-        // Create the quiz
-        const quiz = await prisma.quiz.create({
-          data: {
-            title: createQuizDto.title,
-            instructions: createQuizDto.instructions,
-            total_marks: totalMarks,
-            due_at: createQuizDto.due_at ? new Date(createQuizDto.due_at) : undefined,
-            is_published: shouldPublishImmediately,
-            published_at: publishAt,
-            publication_status: publicationStatus,
-            scheduled_publish_at: scheduledPublishAt,
-            metadata: createQuizDto.metadata,
-            series_id: createQuizDto.series_id,
-            course_id: createQuizDto.course_id,
-          },
-        });
-
-        this.logger.log(`Created quiz with ID: ${quiz.id}`);
-
-        // Create questions and answers
-        for (const questionDto of createQuizDto.questions) {
-          const question = await prisma.quizQuestion.create({
-            data: {
-              quiz_id: quiz.id,
-              prompt: questionDto.prompt,
-              points: questionDto.points || 1,
-              position: questionDto.position || 0,
-            },
-          });
-
-          this.logger.log(`Created question with ID: ${question.id}`);
-
-          // Create answers for this question
-          for (const answerDto of questionDto.answers) {
-            const answer = await prisma.questionAnswer.create({
-              data: {
-                question_id: question.id,
-                option: answerDto.option,
-                position: answerDto.position || 0,
-                is_correct: answerDto.is_correct || false,
-              },
-            });
-
-            this.logger.log(`Created answer with ID: ${answer.id}, is_correct: ${answer.is_correct}`);
-          }
-        }
-        return quiz;
-      });
-
-      // Schedule publication if needed (outside transaction)
-      if (result.publication_status === 'SCHEDULED' && result.scheduled_publish_at) {
-        try {
-          await this.quizPublishService.scheduleQuizPublication(result.id, result.scheduled_publish_at);
-          this.logger.log(`Quiz ${result.id} scheduled for publication at ${result.scheduled_publish_at.toISOString()}`);
-        } catch (error) {
-          this.logger.error(`Failed to schedule quiz publication for ${result.id}: ${error.message}`, error.stack);
-          // Don't throw error here as the quiz was created successfully
-        }
-      }
-      // Fetch the complete quiz with relations
-      const quizWithRelations = await this.prisma.quiz.findUnique({
-        where: { id: result.id },
-      });
-
-      this.logger.log(`Quiz created successfully with ID: ${result.id}`);
-
-      // Create schedule event
-      await ScheduleEventRepository.createEvent({
-        quiz_id: result.id,
-        title: result.title,
-        start_at: result.published_at,
-        end_at: result.due_at,
-        type: ScheduleType.QUIZ,
-        series_id: result.series_id,
-        course_id: result.course_id,
-      });
-
-      // Get all enrolled students in the series
-      const enrolledStudents = await this.prisma.enrollment.findMany({
-        where: {
-          series_id: result.series_id,
-          deleted_at: null,
-          status: { in: ['ACTIVE', 'COMPLETED'] as any },
-        },
-        select: { user_id: true },
-      });
-
-      // Send notifications to all enrolled students
-      const notificationPromises = enrolledStudents.map(student =>
-        NotificationRepository.createNotification({
-          receiver_id: student.user_id,
-          text: `New quiz "${result.title}" has been published`,
-          type: 'quiz',
-          entity_id: result.id,
-        })
-      );
-
-      await Promise.all(notificationPromises);
-
-      // Send real-time notifications to all enrolled students
-      enrolledStudents.forEach(student => {
-        this.messageGateway.server.emit('notification', {
-          receiver_id: student.user_id,
-          text: `New quiz "${result.title}" has been published`,
-          type: 'quiz',
-          entity_id: result.id,
-        });
-      });
-
-      return {
-        success: true,
-        message: 'Quiz created successfully',
-        data: quizWithRelations,
-      };
-    } catch (error) {
-      this.logger.error(`Error creating quiz: ${error.message}`, error.stack);
-
-      if (error instanceof BadRequestException) {
-        throw error;
-      }
-
-      return {
-        success: false,
-        message: 'Failed to create quiz',
         error: error.message,
       };
     }

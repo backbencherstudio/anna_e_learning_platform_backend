@@ -5,7 +5,6 @@ const prisma = new PrismaClient();
 export class ScheduleEventRepository {
     // Create an event
     static async createEvent({
-        user_id,
         title,
         start_at,
         end_at,
@@ -19,7 +18,6 @@ export class ScheduleEventRepository {
         assignment_id,
         quiz_id,
     }: {
-        user_id?: string;
         title: string;
         start_at: Date | string;
         end_at: Date | string;
@@ -35,7 +33,6 @@ export class ScheduleEventRepository {
     }) {
         const data: any = {
         };
-        if (user_id) data.user_id = user_id;
         if (title) data.title = title;
         if (description) data.description = description;
         if (type) data.type = type;
@@ -46,7 +43,7 @@ export class ScheduleEventRepository {
         if (assignment_id) data.assignment_id = assignment_id;
         if (quiz_id) data.quiz_id = quiz_id;
         if (status) data.status = status;
-        if (start_at) data.start_at= start_at;
+        if (start_at) data.start_at = start_at;
         if (end_at) data.end_at = end_at;
 
         return prisma.scheduleEvent.create({ data });

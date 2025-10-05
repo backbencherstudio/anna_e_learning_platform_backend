@@ -251,19 +251,15 @@ export class SeriesService {
         } catch (error) {
           this.logger.error(`Failed to schedule queue job for series ${result.id}: ${error.message}`, error.stack);
           // Don't fail the entire creation process if queue scheduling fails
-
         }
+      } else if (!result.start_date && !result.end_date) {
+        await this.seriesPublishService.publishSeriesImmediately(result.id);
       }
 
 
       // Fetch the complete series with relations
       const seriesWithRelations = await this.prisma.series.findUnique({
         where: { id: result.id },
-        include: {
-          courses: {
-            orderBy: { position: 'asc' },
-          },
-        }
       });
 
 
@@ -290,19 +286,28 @@ export class SeriesService {
   /**
    * Get all series with pagination and filtering
    */
-  async findAll(page: number = 1, limit: number = 10, search?: string): Promise<SeriesResponse<{ series: any[]; pagination: any }>> {
+  async findAll(page: number = 1, limit: number = 10, search?: string, course_type?: string): Promise<SeriesResponse<{ series: any[]; pagination: any }>> {
     try {
 
 
       const skip = (page - 1) * limit;
 
-      const where = search ? {
-        OR: [
+      const where: any = {};
+
+      // Add search filter
+      if (search) {
+        where.OR = [
           { title: { contains: search, mode: 'insensitive' as any } },
           { summary: { contains: search, mode: 'insensitive' as any } },
           { description: { contains: search, mode: 'insensitive' as any } },
-        ],
-      } : {};
+        ];
+      }
+
+      // Add course type filter
+      if (course_type) {
+        where.course_type = course_type;
+      }
+
 
       const [series, total] = await Promise.all([
         this.prisma.series.findMany({

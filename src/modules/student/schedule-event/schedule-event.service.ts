@@ -12,6 +12,11 @@ export class ScheduleEventService {
     async listForEnrolledSeries(
         studentId: string,
         date?: DateLike,
+        page: number = 1,
+        limit: number = 10,
+        type?: string,
+        status?: string,
+        seriesId?: string,
     ) {
         try {
             // get student's active/completed enrollments
@@ -56,9 +61,9 @@ export class ScheduleEventService {
 
             const where: any = {
                 deleted_at: null,
-                status: 'SCHEDULED', // Only show scheduled events
+                status: status || 'SCHEDULED', // Filter by status or default to scheduled
                 OR: [
-                    { user_id: studentId }, // Events directly assigned to the student
+                    { user_ids: { has: studentId } }, // Events directly assigned to the student
                     seriesIds.length ? { series_id: { in: seriesIds } } : undefined,
                     courseIds.length ? { course_id: { in: courseIds } } : undefined,
                     assignmentIds.length ? { assignment_id: { in: assignmentIds } } : undefined,
@@ -66,6 +71,7 @@ export class ScheduleEventService {
                 ].filter(Boolean),
             };
 
+            // Add date filter
             if (date) {
                 const startOfDay = new Date(new Date(date as any).setHours(0, 0, 0, 0));
                 const endOfDay = new Date(new Date(date as any).setHours(23, 59, 59, 999));
@@ -75,21 +81,59 @@ export class ScheduleEventService {
                 ];
             }
 
-            const events = await this.prisma.scheduleEvent.findMany({
-                where,
-                orderBy: { start_at: 'asc' },
-                include: {
-                    assignment: { select: { id: true, title: true } },
-                    quiz: { select: { id: true, title: true } },
-                    course: { select: { id: true, title: true } },
-                    series: { select: { id: true, title: true } },
-                },
-            });
+            // Add type filter
+            if (type) {
+                where.type = type;
+            }
+
+            // Add series filter (if student wants to filter by specific series)
+            if (seriesId) {
+                where.series_id = seriesId;
+            }
+
+            const skip = (page - 1) * limit;
+
+            const [events, total] = await Promise.all([
+                this.prisma.scheduleEvent.findMany({
+                    where,
+                    orderBy: { start_at: 'asc' },
+                    skip,
+                    take: limit,
+                    include: {
+                        users: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                            }
+                        },
+                        assignment: { select: { id: true, title: true } },
+                        quiz: { select: { id: true, title: true } },
+                        course: { select: { id: true, title: true } },
+                        series: { select: { id: true, title: true } },
+                    },
+                }),
+                this.prisma.scheduleEvent.count({ where }),
+            ]);
+
+            const totalPages = Math.ceil(total / limit);
+            const hasNextPage = page < totalPages;
+            const hasPreviousPage = page > 1;
 
             return {
                 success: true,
                 message: 'Schedule events fetched',
-                data: { events },
+                data: {
+                    events,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        totalPages,
+                        hasNextPage,
+                        hasPreviousPage,
+                    },
+                },
             };
         } catch (error) {
             this.logger.error(`Failed to list schedule events: ${error.message}`, error.stack);

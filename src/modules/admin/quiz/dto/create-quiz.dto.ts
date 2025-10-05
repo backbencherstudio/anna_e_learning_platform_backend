@@ -62,7 +62,7 @@ export class CreateQuizDto {
     @Min(0)
     total_marks?: number;
 
-    @IsNotEmpty()
+    @IsOptional()
     @IsDateString()
     due_at?: string;
 
@@ -71,7 +71,7 @@ export class CreateQuizDto {
     @IsBoolean()
     is_published?: boolean;
 
-    @IsNotEmpty()
+    @IsOptional()
     @IsDateString()
     published_at?: string;
 

@@ -23,17 +23,18 @@ export class NotificationRepository {
     receiver_id?: string;
     text?: string;
     type?:
-      | 'message'
-      | 'comment'
-      | 'review'
-      | 'booking'
-      | 'payment_transaction'
-      | 'package'
-      | 'blog'
-      | 'contact'
-      | 'assignment'
-      | 'quiz'
-      | 'info';
+    | 'message'
+    | 'comment'
+    | 'review'
+    | 'booking'
+    | 'payment_transaction'
+    | 'package'
+    | 'blog'
+    | 'contact'
+    | 'assignment'
+    | 'quiz'
+    | 'info'
+    | 'event';
     entity_id?: string;
   }) {
     const notificationEventData = {};
