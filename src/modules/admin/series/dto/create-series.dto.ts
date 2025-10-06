@@ -50,6 +50,10 @@ export class CreateSeriesDto {
     @IsOptional() @Transform(({ value }) => value === undefined ? 0 : Number(value))
     available_site?: number;
 
+
+    @IsOptional() @Transform(({ value }) => value === undefined ? 0 : Number(value))
+    total_site?: number;
+
     @IsOptional() @IsString()
     language_id?: string;
 

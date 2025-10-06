@@ -63,7 +63,7 @@ export class ScheduleEventService {
                 deleted_at: null,
                 status: status || 'SCHEDULED', // Filter by status or default to scheduled
                 OR: [
-                    { user_ids: { has: studentId } }, // Events directly assigned to the student
+                    { user_id: studentId }, // Events directly assigned to the student
                     seriesIds.length ? { series_id: { in: seriesIds } } : undefined,
                     courseIds.length ? { course_id: { in: courseIds } } : undefined,
                     assignmentIds.length ? { assignment_id: { in: assignmentIds } } : undefined,
@@ -100,7 +100,7 @@ export class ScheduleEventService {
                     skip,
                     take: limit,
                     include: {
-                        users: {
+                        user: {
                             select: {
                                 id: true,
                                 name: true,

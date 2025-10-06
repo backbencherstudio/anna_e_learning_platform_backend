@@ -19,59 +19,43 @@ export class ScheduleEventService {
 
             let userIds: string[] = [];
 
-            // Determine user_ids based on event type
-            if (createScheduleEventDto.series_id && (!createScheduleEventDto.user_ids || createScheduleEventDto.user_ids.length === 0)) {
-                // Combined event - get all users enrolled in the series
-                this.logger.log(`Creating combined event for series: ${createScheduleEventDto.series_id}`);
+            // Determine user_id based on event type
+            if (createScheduleEventDto.user_id) {
+                // Specific user provided - validate user
+                this.logger.log(`Creating event for specific user: ${createScheduleEventDto.user_id}`);
 
-                const enrolledUsers = await this.prisma.user.findMany({
+                const user = await this.prisma.user.findUnique({
                     where: {
-                        enrollments: {
-                            some: {
-                                series_id: createScheduleEventDto.series_id,
-                                status: EnrollmentStatus.ACTIVE
-                            }
-                        }
+                        id: createScheduleEventDto.user_id,
+                        type: 'student' // Only students
                     },
                     select: { id: true }
                 });
 
-                if (enrolledUsers.length === 0) {
-                    throw new BadRequestException("No active users found for the specified series");
-                }
-
-                userIds = enrolledUsers.map(user => user.id);
-                this.logger.log(`Found ${userIds.length} enrolled users for series`);
-            } else if (createScheduleEventDto.user_ids && createScheduleEventDto.user_ids.length === 1) {
-                // Individual event - validate single user
-                this.logger.log(`Creating individual event for user: ${createScheduleEventDto.user_ids[0]}`);
-
-                const user = await this.prisma.user.findUnique({
-                    where: { id: createScheduleEventDto.user_ids[0] },
-                    select: { id: true }
-                });
-
                 if (!user) {
-                    throw new BadRequestException("Invalid user ID");
+                    throw new BadRequestException("User ID is invalid or not a student");
                 }
 
-                userIds = createScheduleEventDto.user_ids;
-            } else if (createScheduleEventDto.user_ids && createScheduleEventDto.user_ids.length > 1) {
-                // Multiple users provided - validate all
-                this.logger.log(`Creating event for ${createScheduleEventDto.user_ids.length} specified users`);
+                userIds = [createScheduleEventDto.user_id];
+                this.logger.log(`Validated user for event`);
+            } else {
+                // No specific user provided - send to ALL students
+                this.logger.log(`Creating event for ALL students`);
 
-                const users = await this.prisma.user.findMany({
-                    where: { id: { in: createScheduleEventDto.user_ids } },
+                const allStudents = await this.prisma.user.findMany({
+                    where: {
+                        type: 'student',
+                        deleted_at: null
+                    },
                     select: { id: true }
                 });
 
-                if (users.length !== createScheduleEventDto.user_ids.length) {
-                    throw new BadRequestException("One or more user IDs are invalid");
+                if (allStudents.length === 0) {
+                    throw new BadRequestException("No students found in the system");
                 }
 
-                userIds = createScheduleEventDto.user_ids;
-            } else {
-                throw new BadRequestException("Either user_ids or series_id must be provided");
+                userIds = allStudents.map(user => user.id);
+                this.logger.log(`Found ${userIds.length} students for event`);
             }
 
             // Validate optional relations exist if provided
@@ -102,6 +86,7 @@ export class ScheduleEventService {
                 }
             }
 
+            // Validate series_id if provided (optional)
             if (createScheduleEventDto.series_id) {
                 const series = await this.prisma.series.findUnique({
                     where: { id: createScheduleEventDto.series_id }
@@ -109,65 +94,74 @@ export class ScheduleEventService {
                 if (!series) {
                     throw new BadRequestException("Series not found");
                 }
+                this.logger.log(`Validated series: ${series.title}`);
             }
 
-            // Create the schedule event
-            const event = await this.prisma.scheduleEvent.create({
-                data: {
-                    title: createScheduleEventDto.title,
-                    description: createScheduleEventDto.description,
-                    class_link: createScheduleEventDto.class_link,
-                    start_at: new Date(createScheduleEventDto.start_at),
-                    end_at: new Date(createScheduleEventDto.end_at),
-                    timezone: createScheduleEventDto.timezone,
-                    status: createScheduleEventDto.status || ScheduleStatus.SCHEDULED,
-                    type: createScheduleEventDto.type || ScheduleType.GENERAL,
-                    metadata: createScheduleEventDto.metadata,
-                    user_ids: userIds, // Use the processed userIds
-                    assignment_id: createScheduleEventDto.assignment_id,
-                    quiz_id: createScheduleEventDto.quiz_id,
-                    course_id: createScheduleEventDto.course_id,
-                    series_id: createScheduleEventDto.series_id,
-                },
-                include: {
-                    users: {
-                        select: {
-                            id: true,
-                            name: true,
-                            email: true,
-                        }
+            // Create schedule events for each user (since schema now uses single user_id)
+            const events = [];
+
+            for (const userId of userIds) {
+                const event = await this.prisma.scheduleEvent.create({
+                    data: {
+                        title: createScheduleEventDto.title,
+                        description: createScheduleEventDto.description,
+                        class_link: createScheduleEventDto.class_link,
+                        start_at: new Date(createScheduleEventDto.start_at),
+                        end_at: new Date(createScheduleEventDto.end_at),
+                        timezone: createScheduleEventDto.timezone,
+                        status: createScheduleEventDto.status || ScheduleStatus.SCHEDULED,
+                        type: createScheduleEventDto.type || ScheduleType.GENERAL,
+                        metadata: createScheduleEventDto.metadata,
+                        user_id: userId, // Single user_id per event
+                        assignment_id: createScheduleEventDto.assignment_id,
+                        quiz_id: createScheduleEventDto.quiz_id,
+                        course_id: createScheduleEventDto.course_id,
+                        series_id: createScheduleEventDto.series_id,
                     },
-                }
-            });
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true,
+                                email: true,
+                            }
+                        },
+                    }
+                });
+                events.push(event);
+            }
 
-            this.logger.log(`Schedule event created with ID: ${event.id}`);
+            this.logger.log(`Created ${events.length} schedule events for ${userIds.length} users`);
 
-            const notificationPromises = userIds.map(userId =>
+            const notificationPromises = userIds.map((userId, index) =>
                 NotificationRepository.createNotification({
                     receiver_id: userId,
-                    text: `New "${event.title}" has been scheduled`,
+                    text: `New "${events[index].title}" has been scheduled`,
                     type: 'event',
-                    entity_id: event.id,
+                    entity_id: events[index].id,
                 })
             );
 
-
             await Promise.all(notificationPromises);
 
-            // Send real-time notifications to all enrolled students
-            userIds.forEach(userId => {
+            // Send real-time notifications to all users
+            userIds.forEach((userId, index) => {
                 this.messageGateway.server.emit('notification', {
                     receiver_id: userId,
-                    text: `New "${event.title}" has been scheduled`,
+                    text: `New "${events[index].title}" has been scheduled`,
                     type: 'event',
-                    entity_id: event.id,
+                    entity_id: events[index].id,
                 });
             });
 
             return {
                 success: true,
-                message: "Schedule event created successfully",
-                data: event,
+                message: `Schedule events created successfully for ${events.length} users`,
+                data: {
+                    events,
+                    total_events: events.length,
+                    total_users: userIds.length,
+                },
             };
         } catch (error) {
             this.logger.error(`Error creating schedule event: ${error.message}`, error.stack);
@@ -227,7 +221,7 @@ export class ScheduleEventService {
                     skip,
                     take: limit,
                     include: {
-                        users: {
+                        user: {
                             select: {
                                 id: true,
                                 username: true,

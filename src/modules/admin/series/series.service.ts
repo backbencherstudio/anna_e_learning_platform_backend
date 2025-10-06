@@ -85,6 +85,7 @@ export class SeriesService {
             course_type: createSeriesDto.course_type,
             note: createSeriesDto.note,
             available_site: createSeriesDto.available_site,
+            total_site: createSeriesDto.available_site,
             language_id: createSeriesDto.language_id,
           },
         });
@@ -330,6 +331,7 @@ export class SeriesService {
             course_type: true,
             note: true,
             available_site: true,
+            total_site: true,
             created_at: true,
             updated_at: true,
             language: {
@@ -1040,12 +1042,12 @@ export class SeriesService {
     }
   }
   /**
-   * Delete a series by ID (soft delete)
+   * Delete a series by ID 
    */
   async remove(id: string): Promise<SeriesResponse<{ id: string }>> {
+
+
     try {
-
-
       // Check if series exists and get file information
       const existingSeries = await this.prisma.series.findUnique({
         where: { id },
@@ -1076,7 +1078,7 @@ export class SeriesService {
       // check if any enrollment exists
       const enrollment = await this.prisma.enrollment.findFirst({
         where: { series_id: id, status: 'ACTIVE' },
-        select: { id: true , status: true },
+        select: { id: true, status: true },
       });
       if (enrollment) {
         throw new BadRequestException(`Series with ID ${id} has enrollments ${enrollment.status}`);
@@ -1124,7 +1126,6 @@ export class SeriesService {
         this.logger.warn(`Failed to delete some files: ${error.message}`);
       }
 
-      // Soft delete the series (Prisma middleware will handle this)
       await this.prisma.series.delete({
         where: { id },
       });

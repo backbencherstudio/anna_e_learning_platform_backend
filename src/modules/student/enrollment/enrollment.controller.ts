@@ -4,14 +4,13 @@ import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 
 
-
+@UseGuards(JwtAuthGuard)
 @Controller('student/enrollment')
 @UsePipes(new ValidationPipe({ transform: true, whitelist: true }))
 export class EnrollmentController {
   constructor(private readonly enrollmentService: EnrollmentService) { }
 
 
-  @UseGuards(JwtAuthGuard)
   @Post()
   @HttpCode(HttpStatus.OK)
   async create(
@@ -20,5 +19,12 @@ export class EnrollmentController {
   ) {
     const user_id = req.user.userId;
     return this.enrollmentService.create(body, user_id);
+  }
+
+  @Get()
+  @HttpCode(HttpStatus.OK)
+  async getStudentEnrollments(@Req() req: any) {
+    const user_id = req.user.userId;
+    return this.enrollmentService.getStudentEnrollments(user_id);
   }
 }

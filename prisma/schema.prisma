@@ -113,7 +113,7 @@ model User {
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
   feedbacks              Feedback[]
-  schedules              ScheduleEvent[]        @relation("ScheduleEventToUser")
+  schedules              ScheduleEvent[]
   card_generators        CardGenerator[]
 
   @@map("users")
@@ -490,7 +490,8 @@ model Series {
   total_price          Decimal?
   course_type          String?   @default("regular")
   note                 String?
-  available_site       Int?      @default(0) // "all", "web", "mobile", "app"
+  total_site           Int?      @default(0)
+  available_site       Int?      @default(0)
   publication_status   String?   @default("DRAFT") // "DRAFT", "SCHEDULED", "PUBLISHED"
   scheduled_publish_at DateTime?
 
@@ -560,7 +561,7 @@ model LessonFile {
   video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
 
   course_id String?
-  course    Course? @relation(fields: [course_id], references: [id])
+  course    Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
 
   // Relations
   lesson_progress LessonProgress[]
@@ -1174,8 +1175,8 @@ model ScheduleEvent {
   type        ScheduleType   @default(GENERAL)
   metadata    Json?
 
-  user_ids      String[]
-  users         User[]      @relation("ScheduleEventToUser")
+  user_id       String?
+  user          User?       @relation(fields: [user_id], references: [id], onDelete: Cascade)
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)

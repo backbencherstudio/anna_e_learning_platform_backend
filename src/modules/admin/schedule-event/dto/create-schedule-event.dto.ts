@@ -36,9 +36,8 @@ export class CreateScheduleEventDto {
   metadata?: any;
 
   @IsOptional()
-  @IsArray()
-  @IsString({ each: true })
-  user_ids?: string[];
+  @IsString()
+  user_id?: string;
 
   @IsOptional()
   @IsString()

@@ -152,6 +152,7 @@ export class CheckoutService {
                 courses: series.courses.map(c => ({
                     title: c.title,
                     price: c.price,
+                    lesson_files: c.lesson_files,
                 })),
                 total_price: series.total_price,
                 total_time: series.video_length,

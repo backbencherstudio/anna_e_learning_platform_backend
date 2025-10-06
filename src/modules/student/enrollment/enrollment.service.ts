@@ -85,7 +85,7 @@ export class EnrollmentService {
             });
 
             // decrise available site
-            await this.prisma.series.update({ where: { id: checkout.series_id }, data: { available_site: series.available_site - 1 } });
+          //  await this.prisma.series.update({ where: { id: checkout.series_id }, data: { available_site: series.available_site - 1 } });
 
             await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
 
@@ -112,6 +112,120 @@ export class EnrollmentService {
         }
     }
 
+
+    /**
+     * Get all enrollment data for a specific student
+     */
+    async getStudentEnrollments(userId: string) {
+        try {
+            this.logger.log(`Fetching all enrollments for student: ${userId}`);
+
+            const enrollments = await this.prisma.enrollment.findMany({
+                where: {
+                    user_id: userId,
+                    deleted_at: null,
+                },
+                include: {
+                    series: {
+                        select: {
+                            id: true,
+                            title: true,
+                            description: true,
+                            thumbnail: true,
+                            total_price: true,
+                            course_type: true,
+                            duration: true,
+                            start_date: true,
+                            end_date: true,
+                            available_site: true,
+                        },
+                    },
+                    payment_transactions: {
+                        select: {
+                            id: true,
+                            amount: true,
+                            currency: true,
+                            status: true,
+                            reference_number: true,
+                            created_at: true,
+                        },
+                        orderBy: { created_at: 'desc' },
+                    },
+                },
+                orderBy: { enrolled_at: 'desc' },
+            });
+
+            if (enrollments.length === 0) {
+                return {
+                    success: true,
+                    message: 'No enrollments found for this student',
+                    data: {
+                        enrollments: [],
+                        total_enrollments: 0,
+                        total_invested: 0,
+                        active_enrollments: 0,
+                        completed_enrollments: 0,
+                    },
+                };
+            }
+
+            // Calculate statistics
+            const totalEnrollments = enrollments.length;
+            const activeEnrollments = enrollments.filter(e => e.status === 'ACTIVE').length;
+            const completedEnrollments = enrollments.filter(e => e.status === 'COMPLETED').length;
+            const totalInvested = enrollments.reduce((sum, e) => sum + Number(e.series.total_price || 0), 0);
+            const avgProgress = totalEnrollments > 0
+                ? Math.round((enrollments.reduce((sum, e) => sum + (e.progress_percentage || 0), 0) / totalEnrollments) * 100) / 100
+                : 0;
+
+            // Add file URLs and additional data
+            const enrichedEnrollments = enrollments.map(enrollment => {
+                const seriesData = enrollment.series;
+
+                // Add thumbnail URL
+                if (seriesData.thumbnail) {
+                    seriesData['thumbnail_url'] = `https://your-storage-url.com/series-thumbnails/${seriesData.thumbnail}`;
+                }
+
+                return {
+                    id: enrollment.id,
+                    status: enrollment.status,
+                    payment_status: enrollment.payment_status,
+                    enroll_type: enrollment.enroll_type,
+                    progress_percentage: enrollment.progress_percentage,
+                    enrolled_at: enrollment.enrolled_at,
+                    completed_at: enrollment.completed_at,
+                    expires_at: enrollment.expires_at,
+                    last_accessed_at: enrollment.last_accessed_at,
+                    payment_reference_number: enrollment.payment_reference_number,
+                    series: seriesData,
+                    transactions: enrollment.payment_transactions,
+                };
+            });
+
+            return {
+                success: true,
+                message: 'Student enrollments retrieved successfully',
+                data: {
+                    enrollments: enrichedEnrollments,
+                    statistics: {
+                        total_enrollments: totalEnrollments,
+                        active_enrollments: activeEnrollments,
+                        completed_enrollments: completedEnrollments,
+                        total_invested: totalInvested,
+                        average_progress: avgProgress,
+                    },
+                },
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching student enrollments: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to fetch student enrollments',
+                error: error.message,
+            };
+        }
+    }
 
     /**
 * Handle successful payment (called by webhook)
