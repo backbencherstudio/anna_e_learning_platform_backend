@@ -119,6 +119,7 @@ export class MailService {
         context: {
           name: params.recipientName || '',
           message: params.message,
+          subject: subject,
           appName: appConfig().app.name,
         },
       });

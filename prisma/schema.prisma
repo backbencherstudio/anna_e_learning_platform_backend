@@ -106,13 +106,14 @@ model User {
   enrollments            Enrollment[]
   user_progress          UserProgress[]
   lesson_progress        LessonProgress[]
+  course_progress        CourseProgress[]
   certificates           Certificate[]
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
   checkouts              Checkout[]
   scholarship_codes      ScholarshipCode[]
   student_files          StudentFile[]
   feedbacks              Feedback[]
-  schedules              ScheduleEvent[] @relation("ScheduleEventToUser")
+  schedules              ScheduleEvent[]        @relation("ScheduleEventToUser")
   card_generators        CardGenerator[]
 
   @@map("users")
@@ -505,6 +506,7 @@ model Series {
   materials_files MaterialsFile[]
   student_files   StudentFile[]
   lesson_progress LessonProgress[]
+  course_progress CourseProgress[]
   checkouts       Checkout[]
   ScholarshipCode ScholarshipCode[]
   schedules       ScheduleEvent[]
@@ -537,6 +539,7 @@ model Course {
   scholarshipCodes ScholarshipCode[] @relation("ScholarshipCourse")
   feedbacks        Feedback[]
   schedules        ScheduleEvent[]
+  course_progress  CourseProgress[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -555,13 +558,12 @@ model LessonFile {
   alt          String?
   position     Int     @default(0)
   video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
-  is_locked    Boolean @default(true) // Whether this lesson is locked by default
 
   course_id String?
   course    Course? @relation(fields: [course_id], references: [id])
 
   // Relations
-  user_progress LessonProgress[]
+  lesson_progress LessonProgress[]
 
   @@index([course_id])
   @@map("lesson_files")
@@ -950,6 +952,34 @@ model UserProgress {
   @@map("user_progress")
 }
 
+model CourseProgress {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  user_id   String
+  course_id String
+  series_id String
+
+  // Progress tracking
+  status                String?   @default("pending") // pending, in_progress, completed, abandoned
+  started_at            DateTime?
+  is_completed          Boolean   @default(false)
+  completed_at          DateTime?
+  completion_percentage Float?    @default(0) // 0-100
+
+  // Relations
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  series Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+  @@index([user_id, course_id])
+  @@index([user_id, series_id])
+  @@map("course_progress")
+}
+
 model LessonProgress {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
@@ -1144,8 +1174,8 @@ model ScheduleEvent {
   type        ScheduleType   @default(GENERAL)
   metadata    Json?
 
-  user_ids String[]
-  users User[] @relation("ScheduleEventToUser")
+  user_ids      String[]
+  users         User[]      @relation("ScheduleEventToUser")
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)

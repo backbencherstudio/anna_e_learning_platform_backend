@@ -1,12 +1,14 @@
-import { Controller, Get, Query, Param, UseGuards, HttpCode, HttpStatus, Post, Body } from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, HttpCode, HttpStatus, Post, Body, Res, Header, UploadedFile, UseInterceptors, Delete } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { StudentService } from './student.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guard/role/roles.guard';
 import { Roles } from '../../../common/guard/role/roles.decorator';
 import { Role } from '../../../common/guard/role/role.enum';
 
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+// @UseGuards(JwtAuthGuard, RolesGuard)
+// @Roles(Role.ADMIN)
 @Controller('admin/student')
 export class StudentController {
   constructor(private readonly studentService: StudentService) { }
@@ -35,19 +37,42 @@ export class StudentController {
     return this.studentService.findAllNameEmail();
   }
 
+  @Post('notify')
+  @HttpCode(HttpStatus.OK)
+  async notify(
+    @Body('student_id') student_id: string,
+    @Body('message') message: string,
+  ) {
+    const result = await this.studentService.sendEmailNotification(student_id, message);
+    return result;
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   findOne(@Param('id') id: string) {
     return this.studentService.findOne(id);
   }
 
-  @Post(':id/notify')
+  @Get(':id/download')
   @HttpCode(HttpStatus.OK)
-  async notify(
-    @Param('id') id: string,
-    @Body('message') message: string,
-  ) {
-    const result = await this.studentService.sendEmailNotification(id, message);
-    return result;
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment')
+  async downloadUserDetails(@Param('id') id: string, @Res() res: Response) {
+    const result = await this.studentService.downloadUserDetailsAsCSV(id);
+
+    if (result.success) {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${result.data.filename}"`);
+      res.send(result.data.csv);
+    } else {
+      res.status(HttpStatus.NOT_FOUND).json(result);
+    }
   }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  async remove(@Param('id') id: string) {
+    return this.studentService.remove(id);
+  }
+
 }
