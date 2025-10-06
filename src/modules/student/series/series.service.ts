@@ -523,6 +523,44 @@ export class SeriesService {
                 };
             }
 
+            // Check if user has course progress (enrollment and course progress must exist)
+            const courseProgress = await this.prisma.courseProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    course_id: lesson.course.id,
+                    series_id: lesson.course.series_id,
+                    deleted_at: null,
+                },
+            });
+
+            if (!courseProgress) {
+                this.logger.warn(`User ${userId} attempted to view lesson ${lessonId} without course progress`);
+                return {
+                    success: false,
+                    message: 'You must be enrolled in this course to view lessons',
+                    error: 'Course progress not found',
+                };
+            }
+
+            // Check if user is enrolled in the series
+            const enrollment = await this.prisma.enrollment.findFirst({
+                where: {
+                    user_id: userId,
+                    series_id: lesson.course.series_id,
+                    status: { in: ['ACTIVE', 'COMPLETED'] },
+                    deleted_at: null,
+                },
+            });
+
+            if (!enrollment) {
+                this.logger.warn(`User ${userId} attempted to view lesson ${lessonId} without active enrollment`);
+                return {
+                    success: false,
+                    message: 'You must be enrolled in this series to view lessons',
+                    error: 'Active enrollment not found',
+                };
+            }
+
             // Upsert lesson progress
             const progress = await this.prisma.lessonProgress.upsert({
                 where: {
@@ -548,6 +586,8 @@ export class SeriesService {
 
             // Update course progress to in_progress if it's still pending
             await this.updateCourseProgressStatus(userId, lesson.course.id, lesson.course.series_id, 'in_progress');
+
+            this.logger.log(`Lesson ${lessonId} marked as viewed for user ${userId}`);
 
             return {
                 success: true,
@@ -592,6 +632,61 @@ export class SeriesService {
                 return {
                     success: false,
                     message: 'Lesson not found',
+                };
+            }
+
+            // Check if user has course progress (enrollment and course progress must exist)
+            const courseProgress = await this.prisma.courseProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    course_id: lesson.course.id,
+                    series_id: lesson.course.series_id,
+                    deleted_at: null,
+                },
+            });
+
+            if (!courseProgress) {
+                this.logger.warn(`User ${userId} attempted to complete lesson ${lessonId} without course progress`);
+                return {
+                    success: false,
+                    message: 'You must be enrolled in this course to complete lessons',
+                    error: 'Course progress not found',
+                };
+            }
+
+            // Check if user is enrolled in the series
+            const enrollment = await this.prisma.enrollment.findFirst({
+                where: {
+                    user_id: userId,
+                    series_id: lesson.course.series_id,
+                    status: { in: ['ACTIVE', 'COMPLETED'] },
+                    deleted_at: null,
+                },
+            });
+
+            if (!enrollment) {
+                this.logger.warn(`User ${userId} attempted to complete lesson ${lessonId} without active enrollment`);
+                return {
+                    success: false,
+                    message: 'You must be enrolled in this series to complete lessons',
+                    error: 'Active enrollment not found',
+                };
+            }
+
+            // Check if lesson has been viewed before allowing completion
+            const existingProgress = await this.prisma.lessonProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                },
+            });
+
+            if (!existingProgress || !existingProgress.is_viewed) {
+                this.logger.warn(`User ${userId} attempted to complete lesson ${lessonId} without viewing it first`);
+                return {
+                    success: false,
+                    message: 'You must view the lesson before marking it as completed',
+                    error: 'Lesson not viewed',
                 };
             }
 

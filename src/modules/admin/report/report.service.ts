@@ -4,6 +4,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { ScheduleEventService } from '../schedule-event/schedule-event.service';
 import { AssignmentService } from '../assignment/assignment.service';
 import { QuizService } from '../quiz/quiz.service';
+import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
+import appConfig from 'src/config/app.config';
 
 @Injectable()
 export class ReportService {
@@ -137,26 +139,41 @@ export class ReportService {
                     paid_amount: true,
                     paid_currency: true,
                     progress_percentage: true,
+                    created_at: true,
+                    enrolled_at: true,
+                    completed_at: true,
+                    expires_at: true,
                     user: {
                         select: {
                             id: true,
                             name: true,
                             email: true,
                             phone_number: true,
+                            whatsapp_number: true,
                             date_of_birth: true,
                             address: true,
+                            avatar: true,
                         },
                     },
                     series: {
                         select: {
                             id: true,
                             title: true,
-                           course_type: true,
+                            course_type: true,
+                            start_date: true,
+                            end_date: true,
                         },
                     },
                 },
             }),
         ]);
+
+        // add avatar url to user avatar_url field
+        items.forEach(item => {
+            if (item.user.avatar) {
+                (item.user as any).avatar_url = SojebStorage.url(appConfig().storageUrl.avatar + item.user.avatar);
+            }
+        });
 
         return {
             success: true,
@@ -483,6 +500,31 @@ export class ReportService {
                         status: true,
                     },
                 },
+                courses: {
+                    select: {
+                        id: true,
+                        title: true,
+                        position: true,
+                        course_progress: {
+                            select: {
+                                id: true,
+                                user_id: true,
+                                status: true,
+                                is_completed: true,
+                                completion_percentage: true,
+                                completed_at: true,
+                            },
+                        },
+                        _count: {
+                            select: {
+                                lesson_files: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        position: 'asc',
+                    },
+                },
             },
             orderBy: {
                 created_at: 'desc',
@@ -494,13 +536,53 @@ export class ReportService {
             const completedEnrollments = serie.enrollments.filter(e => e.status === 'COMPLETED').length;
             const completionRate = totalEnrollments > 0 ? Math.round((completedEnrollments / totalEnrollments) * 100) : 0;
 
-            return {
+            // Calculate course progress statistics
+            const courseProgressStats = serie.courses.map(course => {
+                const totalProgressRecords = course.course_progress.length;
+                const completedCourses = course.course_progress.filter(cp => cp.is_completed).length;
+                const inProgressCourses = course.course_progress.filter(cp => cp.status === 'in_progress').length;
+                const pendingCourses = course.course_progress.filter(cp => cp.status === 'pending').length;
+
+                const avgCompletionPercentage = totalProgressRecords > 0
+                    ? Math.round(course.course_progress.reduce((sum, cp) => sum + (cp.completion_percentage || 0), 0) / totalProgressRecords)
+                    : 0;
+
+                return {
+                    course_id: course.id,
+                    course_title: course.title,
+                    position: course.position,
+                    total_lesson_files: course._count.lesson_files,
+                    total_progress_records: totalProgressRecords,
+                    completed_courses: completedCourses,
+                    in_progress_courses: inProgressCourses,
+                    pending_courses: pendingCourses,
+                    average_completion_percentage: avgCompletionPercentage,
+                    course_completion_rate: totalProgressRecords > 0 ? Math.round((completedCourses / totalProgressRecords) * 100) : 0,
+                };
+            });
+
+            const result: any = {
                 series_id: serie.id,
                 title: serie.title,
                 total_enrollments: totalEnrollments,
                 completed_enrollments: completedEnrollments,
                 completion_rate: completionRate,
             };
+
+            // Add course progress data when filtering by specific series
+            if (seriesId) {
+                result.courses = courseProgressStats;
+                result.course_summary = {
+                    total_courses: serie.courses.length,
+                    total_lesson_files: serie.courses.reduce((sum, course) => sum + course._count.lesson_files, 0),
+                    total_course_progress_records: serie.courses.reduce((sum, course) => sum + course.course_progress.length, 0),
+                    overall_course_completion_rate: courseProgressStats.length > 0
+                        ? Math.round(courseProgressStats.reduce((sum, course) => sum + course.course_completion_rate, 0) / courseProgressStats.length)
+                        : 0,
+                };
+            }
+
+            return result;
         });
 
         // Calculate overall completion rate
@@ -538,6 +620,31 @@ export class ReportService {
                         completed_at: true,
                     },
                 },
+                courses: {
+                    select: {
+                        id: true,
+                        title: true,
+                        position: true,
+                        course_progress: {
+                            select: {
+                                id: true,
+                                user_id: true,
+                                status: true,
+                                is_completed: true,
+                                completion_percentage: true,
+                                completed_at: true,
+                            },
+                        },
+                        _count: {
+                            select: {
+                                lesson_files: true,
+                            },
+                        },
+                    },
+                    orderBy: {
+                        position: 'asc',
+                    },
+                },
             },
             orderBy: {
                 created_at: 'desc',
@@ -550,7 +657,32 @@ export class ReportService {
             const inProgress = serie.enrollments.filter(e => e.status === 'ACTIVE').length;
             const completionRate = totalEnrolled > 0 ? Math.round((completed / totalEnrolled) * 100) : 0;
 
-            return {
+            // Calculate course progress statistics
+            const courseProgressStats = serie.courses.map(course => {
+                const totalProgressRecords = course.course_progress.length;
+                const completedCourses = course.course_progress.filter(cp => cp.is_completed).length;
+                const inProgressCourses = course.course_progress.filter(cp => cp.status === 'in_progress').length;
+                const pendingCourses = course.course_progress.filter(cp => cp.status === 'pending').length;
+
+                const avgCompletionPercentage = totalProgressRecords > 0
+                    ? Math.round(course.course_progress.reduce((sum, cp) => sum + (cp.completion_percentage || 0), 0) / totalProgressRecords)
+                    : 0;
+
+                return {
+                    course_id: course.id,
+                    course_title: course.title,
+                    position: course.position,
+                    total_lesson_files: course._count.lesson_files,
+                    total_progress_records: totalProgressRecords,
+                    completed_courses: completedCourses,
+                    in_progress_courses: inProgressCourses,
+                    pending_courses: pendingCourses,
+                    average_completion_percentage: avgCompletionPercentage,
+                    course_completion_rate: totalProgressRecords > 0 ? Math.round((completedCourses / totalProgressRecords) * 100) : 0,
+                };
+            });
+
+            const result: any = {
                 series_id: serie.id,
                 series_name: serie.title,
                 start_date: serie.start_date,
@@ -560,6 +692,21 @@ export class ReportService {
                 in_progress: inProgress,
                 completion_rate: completionRate,
             };
+
+            // Add course progress data when filtering by specific series
+            if (seriesId) {
+                result.courses = courseProgressStats;
+                result.course_summary = {
+                    total_courses: serie.courses.length,
+                    total_lesson_files: serie.courses.reduce((sum, course) => sum + course._count.lesson_files, 0),
+                    total_course_progress_records: serie.courses.reduce((sum, course) => sum + course.course_progress.length, 0),
+                    overall_course_completion_rate: courseProgressStats.length > 0
+                        ? Math.round(courseProgressStats.reduce((sum, course) => sum + course.course_completion_rate, 0) / courseProgressStats.length)
+                        : 0,
+                };
+            }
+
+            return result;
         });
     }
 
