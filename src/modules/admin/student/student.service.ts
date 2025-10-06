@@ -66,6 +66,7 @@ export class StudentService {
           email: true,
           username: true,
           avatar: true,
+          status: true,
           created_at: true,
           enrollments: {
             select: {
@@ -161,6 +162,7 @@ export class StudentService {
         last_name: true,
         email: true,
         username: true,
+        status: true,
         avatar: true,
         created_at: true,
         enrollments: {
@@ -635,6 +637,66 @@ export class StudentService {
       return {
         success: false,
         message: 'Failed to soft delete student',
+        error: error.message,
+      };
+    }
+  }
+
+  async updateStatus(id: string, status:  number) {
+    try {
+      this.logger.log(`Updating student status for ID: ${id} to: ${status}`);
+
+      // First check if student exists and is not deleted
+      const student = await this.prisma.user.findFirst({
+        where: {
+          id,
+          type: 'student',
+          deleted_at: null
+        },
+        select: { id: true, name: true, email: true, status: true },
+      });
+
+      if (!student) {
+        throw new NotFoundException('Student not found or already deleted');
+      }
+
+      // Update the student status
+      const updatedStudent = await this.prisma.user.update({
+        where: { id },
+        data: {
+          status: status,
+          updated_at: new Date(),
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          status: true,
+          updated_at: true,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Student status updated successfully',
+        data: {
+          id: updatedStudent.id,
+          name: updatedStudent.name,
+          email: updatedStudent.email,
+          status: updatedStudent.status,
+          updated_at: updatedStudent.updated_at,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error updating student status ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to update student status',
         error: error.message,
       };
     }

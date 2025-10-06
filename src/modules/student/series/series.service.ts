@@ -69,6 +69,38 @@ export class SeriesService {
                                         code: true,
                                     },
                                 },
+                                courses: {
+                                    select: {
+                                        id: true,
+                                        title: true,
+                                        position: true,
+                                        price: true,
+                                        video_length: true,
+                                        intro_video_url: true,
+                                        end_video_url: true,
+                                        lesson_files: {
+                                            select: {
+                                                id: true,
+                                                title: true,
+                                                url: true,
+                                                doc: true,
+                                                kind: true,
+                                                alt: true,
+                                                position: true,
+                                                video_length: true,
+                                            },
+                                            orderBy: { position: 'asc' },
+                                        },
+                                    },
+                                    orderBy: { position: 'asc' },
+                                },
+                                _count: {
+                                    select: {
+                                        courses: true,
+                                        quizzes: true,
+                                        assignments: true,
+                                    },
+                                },
                             },
                         },
                     },
@@ -87,6 +119,7 @@ export class SeriesService {
                         enrolled_at: enrollment.enrolled_at,
                         status: enrollment.status,
                         progress_percentage: enrollment.progress_percentage,
+                        last_accessed_at: enrollment.last_accessed_at,
                     },
                 };
             });
@@ -96,10 +129,91 @@ export class SeriesService {
             const hasNextPage = page < totalPages;
             const hasPreviousPage = page > 1;
 
-            // Add file URLs to all series
+            // Add file URLs and progress data to all series
             for (const seriesItem of series) {
                 if (seriesItem.thumbnail) {
                     seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
+                }
+
+                // Calculate total lesson files count
+                const totalLessonFiles = seriesItem.courses?.reduce((total, course) => {
+                    return total + (course.lesson_files?.length || 0);
+                }, 0) || 0;
+                (seriesItem._count as any).lesson_files = totalLessonFiles;
+
+                // Add file URLs for courses and lesson files, plus progress data
+                if (seriesItem.courses && seriesItem.courses.length > 0) {
+                    for (const course of seriesItem.courses) {
+                        if (course.intro_video_url) {
+                            course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+                        }
+                        if (course.end_video_url) {
+                            course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+                        }
+
+                        if (course.lesson_files && course.lesson_files.length > 0) {
+                            for (const lessonFile of course.lesson_files) {
+                                if (lessonFile.url) {
+                                    lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                                }
+                                if (lessonFile.doc) {
+                                    lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Add course and lesson progress for each series
+            for (const seriesItem of series) {
+                if (seriesItem.courses && seriesItem.courses.length > 0) {
+                    for (const course of seriesItem.courses) {
+                        // Add course progress
+                        const courseProgress = await this.prisma.courseProgress.findFirst({
+                            where: {
+                                user_id: userId,
+                                course_id: course.id,
+                                deleted_at: null,
+                            },
+                            select: {
+                                id: true,
+                                status: true,
+                                completion_percentage: true,
+                                is_completed: true,
+                                started_at: true,
+                                completed_at: true,
+                            },
+                        });
+
+                        course['course_progress'] = courseProgress || null;
+
+                        // Add lesson progress for each lesson
+                        if (course.lesson_files && course.lesson_files.length > 0) {
+                            for (const lessonFile of course.lesson_files) {
+                                const lessonProgress = await this.prisma.lessonProgress.findFirst({
+                                    where: {
+                                        user_id: userId,
+                                        lesson_id: lessonFile.id,
+                                        deleted_at: null,
+                                    },
+                                    select: {
+                                        id: true,
+                                        is_completed: true,
+                                        is_viewed: true,
+                                        completed_at: true,
+                                        viewed_at: true,
+                                        time_spent: true,
+                                        last_position: true,
+                                        completion_percentage: true,
+                                    },
+                                });
+
+                                lessonFile['lesson_progress'] = lessonProgress || null;
+                                lessonFile['is_unlocked'] = lessonProgress ? true : false;
+                            }
+                        }
+                    }
                 }
             }
 
@@ -1125,7 +1239,7 @@ export class SeriesService {
             const enrollment = await this.prisma.enrollment.findFirst({
                 where: {
                     user_id: userId,
-                    status: {in: ['ACTIVE', 'COMPLETED'] as any},
+                    status: { in: ['ACTIVE', 'COMPLETED'] as any },
                     payment_status: 'completed',
                     deleted_at: null,
                 },

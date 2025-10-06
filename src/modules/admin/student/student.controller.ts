@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param, UseGuards, HttpCode, HttpStatus, Post, Body, Res, Header, UploadedFile, UseInterceptors, Delete } from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, HttpCode, HttpStatus, Post, Body, Res, Header, UploadedFile, UseInterceptors, Delete, Patch } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Response } from 'express';
 import { StudentService } from './student.service';
@@ -7,8 +7,8 @@ import { RolesGuard } from '../../../common/guard/role/roles.guard';
 import { Roles } from '../../../common/guard/role/roles.decorator';
 import { Role } from '../../../common/guard/role/role.enum';
 
-// @UseGuards(JwtAuthGuard, RolesGuard)
-// @Roles(Role.ADMIN)
+ @UseGuards(JwtAuthGuard, RolesGuard)
+ @Roles(Role.ADMIN)
 @Controller('admin/student')
 export class StudentController {
   constructor(private readonly studentService: StudentService) { }
@@ -73,6 +73,15 @@ export class StudentController {
   @HttpCode(HttpStatus.OK)
   async remove(@Param('id') id: string) {
     return this.studentService.remove(id);
+  }
+
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: number,
+  ) {
+    return this.studentService.updateStatus(id, status);
   }
 
 }

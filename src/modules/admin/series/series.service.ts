@@ -1073,6 +1073,15 @@ export class SeriesService {
         throw new NotFoundException(`Series with ID ${id} not found`);
       }
 
+      // check if any enrollment exists
+      const enrollment = await this.prisma.enrollment.findFirst({
+        where: { series_id: id, status: 'ACTIVE' },
+        select: { id: true , status: true },
+      });
+      if (enrollment) {
+        throw new BadRequestException(`Series with ID ${id} has enrollments ${enrollment.status}`);
+      }
+
       // Delete all associated files before soft deleting the series
       try {
         // Delete thumbnail
