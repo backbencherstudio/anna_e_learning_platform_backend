@@ -85,6 +85,7 @@ export class SeriesService {
             course_type: createSeriesDto.course_type,
             note: createSeriesDto.note,
             available_site: createSeriesDto.available_site,
+            total_site: createSeriesDto.available_site,
             language_id: createSeriesDto.language_id,
           },
         });
@@ -251,19 +252,15 @@ export class SeriesService {
         } catch (error) {
           this.logger.error(`Failed to schedule queue job for series ${result.id}: ${error.message}`, error.stack);
           // Don't fail the entire creation process if queue scheduling fails
-
         }
+      } else if (!result.start_date && !result.end_date) {
+        await this.seriesPublishService.publishSeriesImmediately(result.id);
       }
 
 
       // Fetch the complete series with relations
       const seriesWithRelations = await this.prisma.series.findUnique({
         where: { id: result.id },
-        include: {
-          courses: {
-            orderBy: { position: 'asc' },
-          },
-        }
       });
 
 
@@ -290,19 +287,28 @@ export class SeriesService {
   /**
    * Get all series with pagination and filtering
    */
-  async findAll(page: number = 1, limit: number = 10, search?: string): Promise<SeriesResponse<{ series: any[]; pagination: any }>> {
+  async findAll(page: number = 1, limit: number = 10, search?: string, course_type?: string): Promise<SeriesResponse<{ series: any[]; pagination: any }>> {
     try {
 
 
       const skip = (page - 1) * limit;
 
-      const where = search ? {
-        OR: [
+      const where: any = {};
+
+      // Add search filter
+      if (search) {
+        where.OR = [
           { title: { contains: search, mode: 'insensitive' as any } },
           { summary: { contains: search, mode: 'insensitive' as any } },
           { description: { contains: search, mode: 'insensitive' as any } },
-        ],
-      } : {};
+        ];
+      }
+
+      // Add course type filter
+      if (course_type) {
+        where.course_type = course_type;
+      }
+
 
       const [series, total] = await Promise.all([
         this.prisma.series.findMany({
@@ -325,6 +331,7 @@ export class SeriesService {
             course_type: true,
             note: true,
             available_site: true,
+            total_site: true,
             created_at: true,
             updated_at: true,
             language: {
@@ -1035,12 +1042,12 @@ export class SeriesService {
     }
   }
   /**
-   * Delete a series by ID (soft delete)
+   * Delete a series by ID 
    */
   async remove(id: string): Promise<SeriesResponse<{ id: string }>> {
+
+
     try {
-
-
       // Check if series exists and get file information
       const existingSeries = await this.prisma.series.findUnique({
         where: { id },
@@ -1066,6 +1073,15 @@ export class SeriesService {
 
       if (!existingSeries) {
         throw new NotFoundException(`Series with ID ${id} not found`);
+      }
+
+      // check if any enrollment exists
+      const enrollment = await this.prisma.enrollment.findFirst({
+        where: { series_id: id, status: 'ACTIVE' },
+        select: { id: true, status: true },
+      });
+      if (enrollment) {
+        throw new BadRequestException(`Series with ID ${id} has enrollments ${enrollment.status}`);
       }
 
       // Delete all associated files before soft deleting the series
@@ -1110,7 +1126,6 @@ export class SeriesService {
         this.logger.warn(`Failed to delete some files: ${error.message}`);
       }
 
-      // Soft delete the series (Prisma middleware will handle this)
       await this.prisma.series.delete({
         where: { id },
       });

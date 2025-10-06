@@ -123,7 +123,7 @@ export class CheckoutService {
                             title: true,
                             price: true,
                             video_length: true,
-                            lesson_files: { select: { id: true, kind: true } },
+                            lesson_files: { select: { id: true, title: true, kind: true } },
                         },
                     },
                 },
@@ -152,6 +152,7 @@ export class CheckoutService {
                 courses: series.courses.map(c => ({
                     title: c.title,
                     price: c.price,
+                    lesson_files: c.lesson_files,
                 })),
                 total_price: series.total_price,
                 total_time: series.video_length,
@@ -331,7 +332,7 @@ export class CheckoutService {
                 where: { series_id: checkout.series_id || undefined },
                 select: { id: true, price: true },
             });
-            
+
             const newTotal = seriesCourses.reduce((sum, c) => {
                 const effective = courseIdsToZero.has(c.id) ? 0 : Number(c.price || 0);
                 return sum + effective;
@@ -339,7 +340,7 @@ export class CheckoutService {
 
             const updatedCheckout = await this.prisma.checkout.update({
                 where: { id: checkout.id },
-                data: { total_price: newTotal, status: 'CODE_APPLIED' },
+                data: { total_price: newTotal, status: 'CODE_APPLIED', type: 'SCHOLARSHIP' },
             });
 
             // return courses with display_price (virtual zero for scholarship courses)

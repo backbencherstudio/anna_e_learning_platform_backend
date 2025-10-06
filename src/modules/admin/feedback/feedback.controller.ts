@@ -56,4 +56,10 @@ export class FeedbackController {
   approve(@Param('id') id: string) {
     return this.feedbackService.approve(id);
   }
+
+  @Patch(':id/reject')
+  @HttpCode(HttpStatus.OK)
+  reject(@Param('id') id: string) {
+    return this.feedbackService.reject(id);
+  }
 }

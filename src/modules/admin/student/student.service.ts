@@ -7,6 +7,9 @@ import appConfig from '../../../config/app.config';
 import { MessageGateway } from '../../chat/message/message.gateway';
 import { NotificationRepository } from '../../../common/repository/notification/notification.repository';
 import { MailService } from '../../../mail/mail.service';
+import csvParser from 'csv-parser';
+import { createWriteStream, createReadStream } from 'fs';
+import { Readable } from 'stream';
 
 @Injectable()
 export class StudentService {
@@ -63,6 +66,7 @@ export class StudentService {
           email: true,
           username: true,
           avatar: true,
+          status: true,
           created_at: true,
           enrollments: {
             select: {
@@ -158,6 +162,7 @@ export class StudentService {
         last_name: true,
         email: true,
         username: true,
+        status: true,
         avatar: true,
         created_at: true,
         enrollments: {
@@ -205,38 +210,598 @@ export class StudentService {
     };
   }
 
-  async sendEmailNotification(student_id: string, message: string) {
+  async downloadUserDetailsAsCSV(id: string) {
     const student = await this.prisma.user.findFirst({
-      where: { id: student_id, type: 'student', deleted_at: null },
+      where: { id, deleted_at: null },
+      select: {
+        id: true,
+        name: true,
+        first_name: true,
+        last_name: true,
+        email: true,
+        username: true,
+        phone_number: true,
+        address: true,
+        date_of_birth: true,
+        gender: true,
+        created_at: true,
+        updated_at: true,
+        enrollments: {
+          select: {
+            id: true,
+            status: true,
+            progress_percentage: true,
+            enrolled_at: true,
+            completed_at: true,
+            expires_at: true,
+            payment_status: true,
+            series: {
+              select: {
+                id: true,
+                title: true,
+                course_type: true,
+                total_price: true,
+                duration: true,
+                start_date: true,
+                end_date: true,
+              },
+            },
+          },
+          orderBy: { enrolled_at: 'desc' },
+        },
+        assignment_submissions: {
+          select: {
+            id: true,
+            status: true,
+            total_grade: true,
+            percentage: true,
+            submitted_at: true,
+            overall_feedback: true,
+            assignment: {
+              select: {
+                id: true,
+                title: true,
+                series: { select: { title: true } },
+              },
+            },
+          },
+          orderBy: { submitted_at: 'desc' },
+        },
+        quiz_submissions: {
+          select: {
+            id: true,
+            status: true,
+            total_grade: true,
+            percentage: true,
+            submitted_at: true,
+            feedback: true,
+            quiz: {
+              select: {
+                id: true,
+                title: true,
+                series: { select: { title: true } },
+              },
+            },
+          },
+          orderBy: { submitted_at: 'desc' },
+        },
+        certificates: {
+          select: {
+            id: true,
+            certificate_number: true,
+            created_at: true,
+            series: { select: { title: true } },
+          },
+          orderBy: { created_at: 'desc' },
+        },
+      },
     });
+
     if (!student) {
       throw new NotFoundException('Student not found');
     }
 
-    // Create in-app notification
-    await NotificationRepository.createNotification({
-      receiver_id: student_id,
-      text: message,
-      type: 'message',
-      entity_id: student_id,
+    // Type cast the student object to include all relations
+    const studentData = student as any;
+
+    // Calculate statistics
+    const totalEnrollments = studentData.enrollments.length;
+    const activeEnrollments = studentData.enrollments.filter((e: any) => e.status === 'ACTIVE').length;
+    const completedEnrollments = studentData.enrollments.filter((e: any) => e.status === 'COMPLETED').length;
+    const avgProgress = totalEnrollments > 0
+      ? Math.round((studentData.enrollments.reduce((acc: number, e: any) => acc + (e.progress_percentage ?? 0), 0) / totalEnrollments) * 100) / 100
+      : 0;
+
+    const totalAssignments = studentData.assignment_submissions.length;
+    const completedAssignments = studentData.assignment_submissions.filter((s: any) => s.status === 'COMPLETED').length;
+    const avgAssignmentScore = completedAssignments > 0
+      ? Math.round((studentData.assignment_submissions.reduce((acc: number, s: any) => acc + (s.total_grade ?? 0), 0) / completedAssignments) * 100) / 100
+      : 0;
+
+    const totalQuizzes = studentData.quiz_submissions.length;
+    const avgQuizScore = totalQuizzes > 0
+      ? Math.round((studentData.quiz_submissions.reduce((acc: number, q: any) => acc + (q.total_grade ?? 0), 0) / totalQuizzes) * 100) / 100
+      : 0;
+
+    const totalCertificates = studentData.certificates.length;
+    const totalPaid = studentData.enrollments.reduce((acc: number, e: any) => acc + (e.series.total_price || 0), 0);
+
+    // Generate CSV content
+    const csvData = this.generateUserCSV(student, studentData, {
+      totalEnrollments,
+      activeEnrollments,
+      completedEnrollments,
+      avgProgress,
+      totalAssignments,
+      completedAssignments,
+      avgAssignmentScore,
+      totalQuizzes,
+      avgQuizScore,
+      totalCertificates,
+      totalPaid,
     });
 
-    // Emit realtime notification via websocket
-    this.messageGateway.server.emit('notification', {
-      receiver_id: student_id,
-      text: message,
-      type: 'message',
-      entity_id: student_id,
-    });
-
-    // Send student notification email (dedicated method)
-    await this.mailService.sendStudentNotificationEmail({
-      to: 'nirob35-844@diu.edu.bd',
-      recipientName: student.name || 'Student',
-      subject: 'New notification',
-      message,
-    });
-
-    return { success: true, message: 'Email notification sent' };
+    return {
+      success: true,
+      message: 'Student details CSV generated successfully',
+      data: {
+        csv: csvData,
+        filename: `Student_Report_${(student.username || student.name || 'Student').replace(/[^a-zA-Z0-9]/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`,
+      },
+    };
   }
+
+  private generateUserCSV(student: any, studentData: any, stats: any): string {
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const formatDate = (date: any): string => {
+      if (!date) return '';
+      return new Date(date).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    };
+
+    const formatCurrency = (amount: any): string => {
+      if (!amount) return '$0.00';
+      return `$${parseFloat(amount).toFixed(2)}`;
+    };
+
+    const formatPercentage = (value: any): string => {
+      if (!value) return '0%';
+      return `${parseFloat(value).toFixed(1)}%`;
+    };
+
+    const generateSeparator = (title: string, length: number = 80): string => {
+      const dashes = '='.repeat(Math.max(0, length - title.length - 4));
+      return `=== ${title} ${dashes}`;
+    };
+
+    const rows = [
+      // Beautiful Header
+      [generateSeparator('STUDENT DETAILS REPORT')],
+      [''],
+      ['COMPREHENSIVE STUDENT ANALYSIS'],
+      [`Generated: ${new Date().toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })}`],
+      [''],
+      [generateSeparator('')],
+      [''],
+
+      // Basic Information Section
+      ['BASIC INFORMATION'],
+      [generateSeparator('Personal Details')],
+      ['Field', 'Value', ' ', 'Details'],
+      [generateSeparator('')],
+      ['Student ID', '', escapeCSV(student.id)],
+      ['Full Name', '', escapeCSV(student.name)],
+      ['First Name', '', escapeCSV(student.first_name)],
+      ['Last Name', '', escapeCSV(student.last_name)],
+      ['Email Address', '', escapeCSV(student.email)],
+      ['Username', '', escapeCSV(student.username)],
+      ['Phone Number', '', escapeCSV(student.phone_number)],
+      ['Address', '', escapeCSV(student.address)],
+      ['Date of Birth', '', formatDate(student.date_of_birth)],
+      ['Gender', '', escapeCSV(student.gender)],
+      ['Account Created', '', formatDate(student.created_at)],
+      ['Last Updated', '', formatDate(student.updated_at)],
+      [''],
+
+      // Performance Statistics
+      ['PERFORMANCE STATISTICS'],
+      [generateSeparator('Learning Analytics')],
+      ['Metric', 'Value', ' ', 'Description'],
+      [generateSeparator('')],
+      ['Total Enrollments', '', escapeCSV(stats.totalEnrollments)],
+      ['Active Enrollments', '', escapeCSV(stats.activeEnrollments)],
+      ['Completed Enrollments', '', escapeCSV(stats.completedEnrollments)],
+      ['Average Progress', '', formatPercentage(stats.avgProgress)],
+      ['Total Assignments', '', escapeCSV(stats.totalAssignments)],
+      ['Completed Assignments', '', escapeCSV(stats.completedAssignments)],
+      ['Avg Assignment Score', '', formatPercentage(stats.avgAssignmentScore)],
+      ['Total Quizzes', '', escapeCSV(stats.totalQuizzes)],
+      ['Avg Quiz Score', '', formatPercentage(stats.avgQuizScore)],
+      ['Total Certificates', '', escapeCSV(stats.totalCertificates)],
+      ['Total Invested', '', formatCurrency(stats.totalPaid)],
+      [''],
+
+      // Enrollments Section
+      ['ENROLLMENT HISTORY'],
+      [generateSeparator('Series & Courses')],
+      ['Enrollment ID', 'Series Title', 'Type', 'Status', 'Progress', 'Enrolled', 'Payment'],
+      [generateSeparator('')],
+      ...studentData.enrollments.map((enrollment: any) => [
+        escapeCSV(enrollment.id.substring(0, 8) + '...'),
+        escapeCSV(enrollment.series.title),
+        escapeCSV(enrollment.series.course_type),
+        escapeCSV(enrollment.status),
+        formatPercentage(enrollment.progress_percentage),
+        formatDate(enrollment.enrolled_at),
+        escapeCSV(enrollment.payment_status)
+      ]),
+      [''],
+
+      // Assignment Submissions
+      ['ASSIGNMENT SUBMISSIONS'],
+      [generateSeparator('Academic Performance')],
+      ['Submission ID', 'Assignment', 'Series', 'Status', 'Score', 'Percentage', 'Submitted'],
+      [generateSeparator('')],
+      ...studentData.assignment_submissions.map((submission: any) => [
+        escapeCSV(submission.id.substring(0, 8) + '...'),
+        escapeCSV(submission.assignment.title),
+        escapeCSV(submission.assignment.series.title),
+        escapeCSV(submission.status),
+        escapeCSV(submission.total_grade),
+        formatPercentage(submission.percentage),
+        formatDate(submission.submitted_at)
+      ]),
+      [''],
+
+      // Quiz Submissions
+      ['QUIZ PERFORMANCE'],
+      [generateSeparator('Knowledge Assessment')],
+      ['Submission ID', 'Quiz Title', 'Series', 'Status', 'Score', 'Percentage', 'Completed'],
+      [generateSeparator('')],
+      ...studentData.quiz_submissions.map((submission: any) => [
+        escapeCSV(submission.id.substring(0, 8) + '...'),
+        escapeCSV(submission.quiz.title),
+        escapeCSV(submission.quiz.series.title),
+        escapeCSV(submission.status),
+        escapeCSV(submission.total_grade),
+        formatPercentage(submission.percentage),
+        formatDate(submission.submitted_at)
+      ]),
+      [''],
+
+      // Certificates Section
+      ['CERTIFICATES & ACHIEVEMENTS'],
+      [generateSeparator('Accomplishments')],
+      ['Certificate ID', 'Certificate #', 'Series Title', 'Issued Date', 'Status', ''],
+      [generateSeparator('')],
+      ...studentData.certificates.map((certificate: any) => [
+        escapeCSV(certificate.id.substring(0, 8) + '...'),
+        escapeCSV(certificate.certificate_number),
+        escapeCSV(certificate.series.title),
+        formatDate(certificate.created_at),
+        'Earned',
+        ''
+      ]),
+      [''],
+
+      // Footer
+      [generateSeparator('REPORT SUMMARY')],
+      ['This report contains comprehensive analytics for student performance and engagement'],
+      ['Report generated automatically by Anna E-Learning Platform'],
+      ['All data is confidential and should be handled securely'],
+      [generateSeparator('')],
+      ['']
+    ];
+
+    // Use csv-parser compatible format
+    return this.generateCSVWithParser(rows);
+  }
+
+  private generateCSVWithParser(rows: string[][]): string {
+    // Convert array of arrays to proper CSV format using csv-parser compatible formatting
+    const csvContent = rows.map(row => {
+      return row.map(cell => {
+        // Escape CSV values properly
+        if (cell === null || cell === undefined) return '';
+        const str = String(cell);
+        // If cell contains comma, quote, or newline, wrap in quotes and escape internal quotes
+        if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+          return `"${str.replace(/"/g, '""')}"`;
+        }
+        return str;
+      }).join(',');
+    }).join('\n');
+
+    return csvContent;
+  }
+
+  private calculateLearningStreak(enrollments: any[]): number {
+    // Simple implementation - could be enhanced with actual learning activity tracking
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+    const recentEnrollments = enrollments.filter(e =>
+      e.enrolled_at && new Date(e.enrolled_at) >= thirtyDaysAgo
+    );
+
+    return recentEnrollments.length;
+  }
+
+  async sendEmailNotification(student_id: string | null, message: string, subject?: string, skipEmail: boolean = false) {
+    try {
+      this.logger.log(`Starting email notification process - student_id: ${student_id}, message: ${message.substring(0, 50)}...`);
+
+      let students = [];
+      let notificationType = '';
+
+      if (student_id) {
+        // Send to specific student
+        this.logger.log(`Looking for specific student with ID: ${student_id}`);
+        const student = await this.prisma.user.findFirst({
+          where: { id: student_id, type: 'student', deleted_at: null },
+        });
+        if (!student) {
+          this.logger.warn(`Student not found with ID: ${student_id}`);
+          throw new NotFoundException('Student not found');
+        }
+        students = [student];
+        notificationType = 'individual';
+        this.logger.log(`Found student: ${student.name} (${student.email})`);
+      } else {
+        // Send to all students
+        this.logger.log('Fetching all students for bulk notification');
+        students = await this.prisma.user.findMany({
+          where: { type: 'student', deleted_at: null },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        });
+        notificationType = 'bulk';
+        this.logger.log(`Found ${students.length} students for bulk notification`);
+      }
+
+      if (students.length === 0) {
+        this.logger.warn('No students found to send notification to');
+        return {
+          success: false,
+          message: 'No students found to send notification to',
+        };
+      }
+
+      const results = {
+        total: students.length,
+        sent: 0,
+        failed: 0,
+        errors: [],
+      };
+
+      this.logger.log(`Starting to send ${notificationType} notification to ${students.length} students`);
+
+      // Send notifications to each student
+      for (const student of students) {
+        try {
+          this.logger.log(`Processing notification for student: ${student.name} (${student.email})`);
+
+          // Create in-app notification
+          await NotificationRepository.createNotification({
+            receiver_id: student.id,
+            text: message,
+            type: 'message',
+            entity_id: student.id,
+          });
+          this.logger.log(`Created in-app notification for ${student.name}`);
+
+          // Emit realtime notification via websocket
+          this.messageGateway.server.emit('notification', {
+            receiver_id: student.id,
+            text: message,
+            type: 'message',
+            entity_id: student.id,
+          });
+          this.logger.log(`Emitted real-time notification for ${student.name}`);
+
+          // Send student notification email with timeout (if not skipped)
+          if (!skipEmail) {
+            try {
+              const emailPromise = this.mailService.sendStudentNotificationEmail({
+                to: student.email,
+                recipientName: student.name || 'Student',
+                subject: subject || 'New notification',
+                message,
+              });
+
+              // Add timeout to prevent hanging
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Email sending timeout')), 10000); // 10 second timeout
+              });
+
+              await Promise.race([emailPromise, timeoutPromise]);
+              this.logger.log(`Email queued successfully for ${student.email}`);
+            } catch (emailError) {
+              this.logger.error(`Failed to queue email for ${student.email}: ${emailError.message}`);
+              // Don't throw - continue with other notifications even if email fails
+            }
+          } else {
+            this.logger.log(`Skipping email sending for ${student.email} (skipEmail flag is true)`);
+          }
+
+          results.sent++;
+          this.logger.log(`Successfully processed notification for ${student.email} (${student.name})`);
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            student_id: student.id,
+            student_email: student.email,
+            error: error.message,
+          });
+          this.logger.error(`Failed to send notification to ${student.email}: ${error.message}`);
+        }
+      }
+
+      const message_text = notificationType === 'individual'
+        ? `Email notification sent to ${results.sent} student`
+        : `Email notification sent to ${results.sent} students (${results.failed} failed)`;
+
+      this.logger.log(`Notification process completed: ${message_text}`);
+
+      return {
+        success: results.sent > 0,
+        message: message_text,
+        data: {
+          type: notificationType,
+          results,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error sending email notification: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: 'Failed to send email notification',
+        error: error.message,
+      };
+    }
+  }
+
+  async remove(id: string) {
+    try {
+      this.logger.log(`Soft deleting student with ID: ${id}`);
+
+      // First check if student exists and is not already deleted
+      const student = await this.prisma.user.findFirst({
+        where: {
+          id,
+          type: 'student',
+          deleted_at: null
+        },
+        select: { id: true, name: true, email: true },
+      });
+
+      if (!student) {
+        throw new NotFoundException('Student not found or already deleted');
+      }
+
+      // Soft delete the student by setting deleted_at timestamp
+      const deletedStudent = await this.prisma.user.update({
+        where: { id },
+        data: {
+          deleted_at: new Date(),
+          updated_at: new Date(),
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          deleted_at: true,
+        },
+      });
+
+      this.logger.log(`Successfully soft deleted student: ${student.name} (${student.email})`);
+
+      return {
+        success: true,
+        message: 'Student soft deleted successfully',
+        data: {
+          id: deletedStudent.id,
+          name: deletedStudent.name,
+          email: deletedStudent.email,
+          deleted_at: deletedStudent.deleted_at,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error soft deleting student ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to soft delete student',
+        error: error.message,
+      };
+    }
+  }
+
+  async updateStatus(id: string, status: number) {
+    try {
+      this.logger.log(`Updating student status for ID: ${id} to: ${status}`);
+
+      // First check if student exists and is not deleted
+      const student = await this.prisma.user.findFirst({
+        where: {
+          id,
+          type: 'student',
+          deleted_at: null
+        },
+        select: { id: true, name: true, email: true, status: true },
+      });
+
+      if (!student) {
+        throw new NotFoundException('Student not found or already deleted');
+      }
+
+      // Update the student status
+      const updatedStudent = await this.prisma.user.update({
+        where: { id },
+        data: {
+          status: status,
+          updated_at: new Date(),
+        },
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          status: true,
+          updated_at: true,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Student status updated successfully',
+        data: {
+          id: updatedStudent.id,
+          name: updatedStudent.name,
+          email: updatedStudent.email,
+          status: updatedStudent.status,
+          updated_at: updatedStudent.updated_at,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error updating student status ${id}: ${error.message}`, error.stack);
+
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      return {
+        success: false,
+        message: 'Failed to update student status',
+        error: error.message,
+      };
+    }
+  }
+
 }

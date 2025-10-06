@@ -5,7 +5,7 @@ import { UpdateAssignmentDto } from './dto/update-assignment.dto';
 import { AssignmentResponse } from './interfaces/assignment-response.interface';
 import { Assignment, AssignmentQuestion, ScheduleType } from '@prisma/client';
 import { DateHelper } from 'src/common/helper/date.helper';
-import { AssignmentPublishService } from '../../queue/assignment-publish.service';
+import { AssignmentPublishService } from '../../queue/services/assignment-publish.service';
 import { ScheduleEventRepository } from 'src/common/repository/schedule-event/schedule-event.repository';
 import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
 import { MessageGateway } from 'src/modules/chat/message/message.gateway';
@@ -48,7 +48,7 @@ export class AssignmentService {
         // Determine publication status and scheduling
         const now = new Date();
         const publishAt = createAssignmentDto.published_at ? new Date(createAssignmentDto.published_at) : undefined;
-        const shouldPublishImmediately = createAssignmentDto.is_published || (publishAt && publishAt <= now);
+        const shouldPublishImmediately = createAssignmentDto.is_published || (publishAt && publishAt <= now) || (!publishAt && !createAssignmentDto.due_at);
 
         let publicationStatus = 'DRAFT';
         let scheduledPublishAt = null;
@@ -104,6 +104,8 @@ export class AssignmentService {
           this.logger.error(`Failed to schedule assignment publication for ${result.id}: ${error.message}`, error.stack);
           // Don't throw error here as the assignment was created successfully
         }
+      } else if (!result.published_at && !result.due_at) {
+        await this.assignmentPublishService.publishAssignmentImmediately(result.id);
       }
 
       // Fetch the complete assignment with relations
@@ -118,16 +120,18 @@ export class AssignmentService {
 
       this.logger.log(`Assignment created successfully with ID: ${result.id}`);
 
-      // Create schedule event
-      await ScheduleEventRepository.createEvent({
-        assignment_id: result.id,
-        title: result.title,
-        start_at: result.published_at,
-        end_at: result.due_at,
-        type: ScheduleType.ASSIGNMENT,
-        series_id: result.series_id,
-        course_id: result.course_id,
-      });
+      if (result.published_at && result.due_at) {
+        // Create schedule event
+        await ScheduleEventRepository.createEvent({
+          assignment_id: result.id,
+          title: result.title,
+          start_at: result.published_at,
+          end_at: result.due_at,
+          type: ScheduleType.ASSIGNMENT,
+          series_id: result.series_id,
+          course_id: result.course_id,
+        });
+      }
 
       // Get all enrolled students in the series
       const enrolledStudents = await this.prisma.enrollment.findMany({

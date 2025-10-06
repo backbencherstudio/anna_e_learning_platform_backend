@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
 export class AssignmentPublishService {
@@ -8,6 +9,7 @@ export class AssignmentPublishService {
 
     constructor(
         @InjectQueue('assignment-publish') private assignmentPublishQueue: Queue,
+        private readonly prisma: PrismaService,
     ) { }
 
     /**
@@ -63,6 +65,33 @@ export class AssignmentPublishService {
             }
         } catch (error) {
             this.logger.error(`Failed to cancel scheduled publication for assignment ${assignmentId}: ${error.message}`, error.stack);
+            throw error;
+        }
+    }
+
+    /**
+     * Publish a assignment immediately
+     */
+    async publishAssignmentImmediately(assignmentId: string): Promise<void> {
+        try {
+            this.logger.log(`Publishing assignment ${assignmentId} immediately`);
+
+            await this.prisma.assignment.update({
+                where: { id: assignmentId },
+                data: {
+                    is_published: true,
+                    publication_status: 'PUBLISHED',
+                    scheduled_publish_at: null,
+                },
+            });
+
+            // Cancel any scheduled jobs for this series
+            await this.cancelScheduledPublication(assignmentId);
+
+            this.logger.log(`Successfully published assignment ${assignmentId} immediately`);
+
+        } catch (error) {
+            this.logger.error(`Failed to publish assignment ${assignmentId} immediately: ${error.message}`, error.stack);
             throw error;
         }
     }

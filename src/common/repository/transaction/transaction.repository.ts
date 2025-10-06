@@ -48,6 +48,87 @@ export class TransactionRepository {
    * Update transaction
    * @returns
    */
+  /**
+   * Recalculate and update available_site for all series
+   * Formula: available_site = total_site - enrollment_count
+   */
+  static async recalculateAllAvailableSites() {
+    try {
+      console.log('Starting recalculation of available seats for all series...');
+
+      // Get all series
+      const allSeries = await prisma.series.findMany({
+        where: { deleted_at: null },
+        select: { id: true, title: true, total_site: true }
+      });
+
+      const results = [];
+
+      for (const series of allSeries) {
+        const result = await this.recalculateAvailableSites(series.id);
+        if (result) {
+          results.push(result);
+        }
+      }
+
+      console.log(`Completed recalculation for ${results.length} series`);
+      return results;
+    } catch (error) {
+      console.error('Error recalculating available sites for all series:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Recalculate and update available_site for a series
+   * Formula: available_site = total_site - enrollment_count
+   */
+  static async recalculateAvailableSites(seriesId: string) {
+    try {
+      // Get total_site from series
+      const series = await prisma.series.findUnique({
+        where: { id: seriesId },
+        select: { total_site: true, title: true }
+      });
+
+      if (!series) {
+        console.error(`Series not found: ${seriesId}`);
+        return;
+      }
+
+      // Count active enrollments for this series
+      const enrollmentCount = await prisma.enrollment.count({
+        where: {
+          series_id: seriesId,
+          status: { in: ['ACTIVE', 'COMPLETED'] },
+          payment_status: 'completed',
+          deleted_at: null
+        }
+      });
+
+      // Calculate available_site = total_site - enrollment_count
+      const availableSite = (series.total_site || 0) - enrollmentCount;
+
+      // Update the series with calculated available_site
+      await prisma.series.update({
+        where: { id: seriesId },
+        data: { available_site: availableSite },
+      });
+
+      console.log(`Recalculated available seats for "${series.title}": ${availableSite} (Total: ${series.total_site}, Enrolled: ${enrollmentCount})`);
+
+      return {
+        seriesId,
+        totalSite: series.total_site,
+        enrollmentCount,
+        availableSite
+      };
+    } catch (error) {
+      console.error(`Error recalculating available sites for series ${seriesId}:`, error);
+      throw error;
+    }
+  }
+
   static async updateTransaction({
     reference_number,
     status = 'pending',
@@ -86,10 +167,8 @@ export class TransactionRepository {
       },
     });
 
-    console.log(paid_amount, paid_currency, raw_status);
-
     // Update enrollment status to active
-    const enrollment = await prisma.enrollment.update({
+    await prisma.enrollment.update({
       where: { id: paymentTransaction.enrollment_id },
       data: {
         status: 'ACTIVE',
@@ -100,7 +179,15 @@ export class TransactionRepository {
       },
     });
 
-    console.log('enrollment', enrollment);
+    // Recalculate available seats for the series
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { id: paymentTransaction.enrollment_id },
+      select: { series_id: true }
+    });
+
+    if (enrollment && enrollment.series_id) {
+      await this.recalculateAvailableSites(enrollment.series_id);
+    }
 
     return await prisma.paymentTransaction.updateMany({
       where: {

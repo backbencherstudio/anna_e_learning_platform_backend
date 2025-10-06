@@ -17,6 +17,7 @@ export class Series {
     course_type?: string;
     note?: string;
     available_site?: number;
+    total_site?: number;
 
     language_id: string;
     language?: any;

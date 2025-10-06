@@ -1,4 +1,6 @@
-import { Controller, Get, Query, Param, UseGuards, HttpCode, HttpStatus, Post, Body } from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, HttpCode, HttpStatus, Post, Body, Res, Header, UploadedFile, UseInterceptors, Delete, Patch } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Response } from 'express';
 import { StudentService } from './student.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guard/role/roles.guard';
@@ -35,19 +37,54 @@ export class StudentController {
     return this.studentService.findAllNameEmail();
   }
 
+  @Post('notify')
+  @HttpCode(HttpStatus.OK)
+  async notify(
+    @Body('message') message: string,
+    @Body('student_id') student_id?: string,
+    @Body('subject') subject?: string,
+  ) {
+    // If student_id is provided, send to specific student
+    // If student_id is null/undefined, send to all students
+    const result = await this.studentService.sendEmailNotification(student_id || null, message, subject);
+    return result;
+  }
+
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   findOne(@Param('id') id: string) {
     return this.studentService.findOne(id);
   }
 
-  @Post(':id/notify')
+  @Get(':id/download')
   @HttpCode(HttpStatus.OK)
-  async notify(
-    @Param('id') id: string,
-    @Body('message') message: string,
-  ) {
-    const result = await this.studentService.sendEmailNotification(id, message);
-    return result;
+  @Header('Content-Type', 'text/csv')
+  @Header('Content-Disposition', 'attachment')
+  async downloadUserDetails(@Param('id') id: string, @Res() res: Response) {
+    const result = await this.studentService.downloadUserDetailsAsCSV(id);
+
+    if (result.success) {
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${result.data.filename}"`);
+      res.send(result.data.csv);
+    } else {
+      res.status(HttpStatus.NOT_FOUND).json(result);
+    }
   }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  async remove(@Param('id') id: string) {
+    return this.studentService.remove(id);
+  }
+
+  @Patch(':id/status')
+  @HttpCode(HttpStatus.OK)
+  async updateStatus(
+    @Param('id') id: string,
+    @Body('status') status: number,
+  ) {
+    return this.studentService.updateStatus(id, status);
+  }
+
 }

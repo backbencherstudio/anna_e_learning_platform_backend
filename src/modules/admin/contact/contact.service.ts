@@ -128,7 +128,7 @@ export class ContactService {
     }
   }
 
-  async approve(id: string) {
+  async updateStatus(id: string, status: string) {
     try {
       const contact = await this.prisma.contact.findUnique({
         where: { id },
@@ -141,7 +141,7 @@ export class ContactService {
 
       const updatedContact = await this.prisma.contact.update({
         where: { id },
-        data: { status: "approve" },
+        data: { status: status },
         select: {
           id: true,
           first_name: true,
@@ -177,6 +177,7 @@ export class ContactService {
       };
     }
   }
+
 
   async remove(id: string) {
     try {

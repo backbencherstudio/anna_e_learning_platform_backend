@@ -87,7 +87,7 @@ export class TeacherSectionService {
     }
   }
 
-  async findAll(page: number = 1, limit: number = 10, search?: string) {
+  async findAll(page: number = 1, limit: number = 10, search?: string, section_type?: string) {
     try {
       const skip = (page - 1) * limit;
       const where: any = {};
@@ -96,6 +96,10 @@ export class TeacherSectionService {
           { title: { contains: search, mode: 'insensitive' as any } },
           { description: { contains: search, mode: 'insensitive' as any } },
         ];
+      }
+
+      if (section_type) {
+        where.section_type = section_type;
       }
 
       const [items, total] = await Promise.all([

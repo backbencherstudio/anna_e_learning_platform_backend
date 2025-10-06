@@ -69,14 +69,15 @@ model User {
   domain     String? @unique
   avatar     String?
 
-  phone_number  String?
-  country       String?
-  state         String?
-  city          String?
-  address       String?
-  zip_code      String?
-  gender        String?
-  date_of_birth DateTime? @db.Date
+  phone_number    String?
+  whatsapp_number String?
+  country         String?
+  state           String?
+  city            String?
+  address         String?
+  zip_code        String?
+  gender          String?
+  date_of_birth   DateTime? @db.Date
 
   // billing id. e.g. stripe customer id
   billing_id String?
@@ -106,6 +107,7 @@ model User {
   enrollments            Enrollment[]
   user_progress          UserProgress[]
   lesson_progress        LessonProgress[]
+  course_progress        CourseProgress[]
   certificates           Certificate[]
   quiz_submissions       QuizSubmission[]       @relation("QuizSubmission")
   checkouts              Checkout[]
@@ -489,7 +491,8 @@ model Series {
   total_price          Decimal?
   course_type          String?   @default("regular")
   note                 String?
-  available_site       Int?      @default(0) // "all", "web", "mobile", "app"
+  total_site           Int?      @default(0)
+  available_site       Int?      @default(0)
   publication_status   String?   @default("DRAFT") // "DRAFT", "SCHEDULED", "PUBLISHED"
   scheduled_publish_at DateTime?
 
@@ -505,6 +508,7 @@ model Series {
   materials_files MaterialsFile[]
   student_files   StudentFile[]
   lesson_progress LessonProgress[]
+  course_progress CourseProgress[]
   checkouts       Checkout[]
   ScholarshipCode ScholarshipCode[]
   schedules       ScheduleEvent[]
@@ -537,6 +541,7 @@ model Course {
   scholarshipCodes ScholarshipCode[] @relation("ScholarshipCourse")
   feedbacks        Feedback[]
   schedules        ScheduleEvent[]
+  course_progress  CourseProgress[]
 
   @@index([series_id, position])
   @@map("courses")
@@ -555,13 +560,12 @@ model LessonFile {
   alt          String?
   position     Int     @default(0)
   video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
-  is_locked    Boolean @default(true) // Whether this lesson is locked by default
 
   course_id String?
-  course    Course? @relation(fields: [course_id], references: [id])
+  course    Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
 
   // Relations
-  user_progress LessonProgress[]
+  lesson_progress LessonProgress[]
 
   @@index([course_id])
   @@map("lesson_files")
@@ -876,6 +880,12 @@ enum EnrollmentStatus {
   EXPIRED
 }
 
+enum EnrollType {
+  PAID
+  SCHOLARSHIP
+  FREE
+}
+
 model Enrollment {
   id         String    @id @default(cuid())
   created_at DateTime  @default(now())
@@ -887,6 +897,7 @@ model Enrollment {
   checkout_id String?
 
   status       EnrollmentStatus @default(ACTIVE)
+  enroll_type  EnrollType       @default(PAID)
   enrolled_at  DateTime         @default(now())
   completed_at DateTime?
   expires_at   DateTime?
@@ -941,6 +952,34 @@ model UserProgress {
 
   @@unique([user_id, series_id])
   @@map("user_progress")
+}
+
+model CourseProgress {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+  deleted_at DateTime?
+
+  user_id   String
+  course_id String
+  series_id String
+
+  // Progress tracking
+  status                String?   @default("pending") // pending, in_progress, completed, abandoned
+  started_at            DateTime?
+  is_completed          Boolean   @default(false)
+  completed_at          DateTime?
+  completion_percentage Float?    @default(0) // 0-100
+
+  // Relations
+  user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  series Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, course_id])
+  @@index([user_id, course_id])
+  @@index([user_id, series_id])
+  @@map("course_progress")
 }
 
 model LessonProgress {
@@ -1005,6 +1044,7 @@ model Checkout {
   deleted_at  DateTime?
   status      String?
   total_price Decimal?
+  type        String?   @default("PAID") // PAID, FREE, SCHOLARSHIP
 
   user_id String?
   user    User?   @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1030,7 +1070,7 @@ model ScholarshipCode {
   name             String?
   // The description of the scholarship - Not necessary 
   description      String? @db.Text
-  scholarship_type String? @default("free_student")
+  scholarship_type String? @default("scholarship")
   series_id        String?
   series           Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
 

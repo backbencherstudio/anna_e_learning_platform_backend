@@ -25,10 +25,11 @@ export class TeacherSectionController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('search') search?: string,
+    @Query('section_type') section_type?: string,
   ) {
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 10;
-    return this.teacherSectionService.findAll(pageNum, limitNum, search);
+    return this.teacherSectionService.findAll(pageNum, limitNum, search, section_type);
   }
 
   @Get(':id')
