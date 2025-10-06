@@ -123,7 +123,7 @@ export class CheckoutService {
                             title: true,
                             price: true,
                             video_length: true,
-                            lesson_files: { select: { id: true, kind: true } },
+                            lesson_files: { select: { id: true, title: true, kind: true } },
                         },
                     },
                 },

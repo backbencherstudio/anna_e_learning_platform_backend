@@ -89,6 +89,7 @@ export class EnrollmentService {
 
             await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
 
+            // Initialize course progress and unlock first lesson
             await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
 
             await this.prisma.checkout.delete({ where: { id: checkout_id } });
@@ -137,6 +138,8 @@ export class EnrollmentService {
                 payment_status: 'completed',
             },
         });
+
+        this.logger.log(`Payment completed and course progress initialized for enrollment ${enrollment.id}`);
     }
 
 }

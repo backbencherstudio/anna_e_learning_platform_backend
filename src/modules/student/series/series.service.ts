@@ -812,22 +812,28 @@ export class SeriesService {
         try {
             this.logger.log(`Unlocking first lesson for user ${userId} in series ${seriesId}`);
 
-            // Find the first course in the series
-            const firstCourse = await this.prisma.course.findFirst({
+            // Get all courses in the series ordered by position
+            const courses = await this.prisma.course.findMany({
                 where: {
                     series_id: seriesId,
                     deleted_at: null,
                 },
                 orderBy: { position: 'asc' },
-                select: { id: true },
+                select: { id: true, position: true },
             });
 
-            if (!firstCourse) {
+            if (!courses.length) {
                 this.logger.warn(`No courses found for series ${seriesId}`);
                 return;
             }
 
+            // Initialize course progress for all courses in the series
+            for (const course of courses) {
+                await this.initializeCourseProgress(userId, course.id, seriesId);
+            }
+
             // Find the first lesson in the first course
+            const firstCourse = courses[0];
             const firstLesson = await this.prisma.lessonFile.findFirst({
                 where: {
                     course_id: firstCourse.id,
@@ -862,12 +868,9 @@ export class SeriesService {
                     is_viewed: false,
                 },
             });
-            // First lesson is now unlocked (no need to update is_locked field)
 
-            this.logger.log(`Unlocked first lesson ${firstLesson.id} for user ${userId}`);
-
-            // Initialize course progress for the first course
-            await this.initializeCourseProgress(userId, firstCourse.id, seriesId);
+            this.logger.log(`Unlocked first lesson ${firstLesson.id} for user ${userId} in series ${seriesId}`);
+            this.logger.log(`Initialized course progress for ${courses.length} courses in series ${seriesId}`);
         } catch (error) {
             this.logger.error(`Error unlocking first lesson: ${error.message}`);
         }

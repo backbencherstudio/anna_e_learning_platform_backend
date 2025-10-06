@@ -7,8 +7,8 @@ import { RolesGuard } from '../../../common/guard/role/roles.guard';
 import { Roles } from '../../../common/guard/role/roles.decorator';
 import { Role } from '../../../common/guard/role/role.enum';
 
- @UseGuards(JwtAuthGuard, RolesGuard)
- @Roles(Role.ADMIN)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(Role.ADMIN)
 @Controller('admin/student')
 export class StudentController {
   constructor(private readonly studentService: StudentService) { }
@@ -40,10 +40,13 @@ export class StudentController {
   @Post('notify')
   @HttpCode(HttpStatus.OK)
   async notify(
-    @Body('student_id') student_id: string,
     @Body('message') message: string,
+    @Body('student_id') student_id?: string,
+    @Body('subject') subject?: string,
   ) {
-    const result = await this.studentService.sendEmailNotification(student_id, message);
+    // If student_id is provided, send to specific student
+    // If student_id is null/undefined, send to all students
+    const result = await this.studentService.sendEmailNotification(student_id || null, message, subject);
     return result;
   }
 

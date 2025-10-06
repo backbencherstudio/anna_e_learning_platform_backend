@@ -547,39 +547,141 @@ export class StudentService {
     return recentEnrollments.length;
   }
 
-  async sendEmailNotification(student_id: string, message: string) {
-    const student = await this.prisma.user.findFirst({
-      where: { id: student_id, deleted_at: null },
-    });
-    if (!student) {
-      throw new NotFoundException('Student not found');
+  async sendEmailNotification(student_id: string | null, message: string, subject?: string, skipEmail: boolean = false) {
+    try {
+      this.logger.log(`Starting email notification process - student_id: ${student_id}, message: ${message.substring(0, 50)}...`);
+
+      let students = [];
+      let notificationType = '';
+
+      if (student_id) {
+        // Send to specific student
+        this.logger.log(`Looking for specific student with ID: ${student_id}`);
+        const student = await this.prisma.user.findFirst({
+          where: { id: student_id, type: 'student', deleted_at: null },
+        });
+        if (!student) {
+          this.logger.warn(`Student not found with ID: ${student_id}`);
+          throw new NotFoundException('Student not found');
+        }
+        students = [student];
+        notificationType = 'individual';
+        this.logger.log(`Found student: ${student.name} (${student.email})`);
+      } else {
+        // Send to all students
+        this.logger.log('Fetching all students for bulk notification');
+        students = await this.prisma.user.findMany({
+          where: { type: 'student', deleted_at: null },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        });
+        notificationType = 'bulk';
+        this.logger.log(`Found ${students.length} students for bulk notification`);
+      }
+
+      if (students.length === 0) {
+        this.logger.warn('No students found to send notification to');
+        return {
+          success: false,
+          message: 'No students found to send notification to',
+        };
+      }
+
+      const results = {
+        total: students.length,
+        sent: 0,
+        failed: 0,
+        errors: [],
+      };
+
+      this.logger.log(`Starting to send ${notificationType} notification to ${students.length} students`);
+
+      // Send notifications to each student
+      for (const student of students) {
+        try {
+          this.logger.log(`Processing notification for student: ${student.name} (${student.email})`);
+
+          // Create in-app notification
+          await NotificationRepository.createNotification({
+            receiver_id: student.id,
+            text: message,
+            type: 'message',
+            entity_id: student.id,
+          });
+          this.logger.log(`Created in-app notification for ${student.name}`);
+
+          // Emit realtime notification via websocket
+          this.messageGateway.server.emit('notification', {
+            receiver_id: student.id,
+            text: message,
+            type: 'message',
+            entity_id: student.id,
+          });
+          this.logger.log(`Emitted real-time notification for ${student.name}`);
+
+          // Send student notification email with timeout (if not skipped)
+          if (!skipEmail) {
+            try {
+              const emailPromise = this.mailService.sendStudentNotificationEmail({
+                to: student.email,
+                recipientName: student.name || 'Student',
+                subject: subject || 'New notification',
+                message,
+              });
+
+              // Add timeout to prevent hanging
+              const timeoutPromise = new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Email sending timeout')), 10000); // 10 second timeout
+              });
+
+              await Promise.race([emailPromise, timeoutPromise]);
+              this.logger.log(`Email queued successfully for ${student.email}`);
+            } catch (emailError) {
+              this.logger.error(`Failed to queue email for ${student.email}: ${emailError.message}`);
+              // Don't throw - continue with other notifications even if email fails
+            }
+          } else {
+            this.logger.log(`Skipping email sending for ${student.email} (skipEmail flag is true)`);
+          }
+
+          results.sent++;
+          this.logger.log(`Successfully processed notification for ${student.email} (${student.name})`);
+        } catch (error) {
+          results.failed++;
+          results.errors.push({
+            student_id: student.id,
+            student_email: student.email,
+            error: error.message,
+          });
+          this.logger.error(`Failed to send notification to ${student.email}: ${error.message}`);
+        }
+      }
+
+      const message_text = notificationType === 'individual'
+        ? `Email notification sent to ${results.sent} student`
+        : `Email notification sent to ${results.sent} students (${results.failed} failed)`;
+
+      this.logger.log(`Notification process completed: ${message_text}`);
+
+      return {
+        success: results.sent > 0,
+        message: message_text,
+        data: {
+          type: notificationType,
+          results,
+        },
+      };
+    } catch (error) {
+      this.logger.error(`Error sending email notification: ${error.message}`, error.stack);
+      return {
+        success: false,
+        message: 'Failed to send email notification',
+        error: error.message,
+      };
     }
-
-    // Create in-app notification
-    await NotificationRepository.createNotification({
-      receiver_id: student_id,
-      text: message,
-      type: 'message',
-      entity_id: student_id,
-    });
-
-    // Emit realtime notification via websocket
-    this.messageGateway.server.emit('notification', {
-      receiver_id: student_id,
-      text: message,
-      type: 'message',
-      entity_id: student_id,
-    });
-
-    // Send student notification email (dedicated method)
-    await this.mailService.sendStudentNotificationEmail({
-      to: student.email,
-      recipientName: student.name || 'Student',
-      subject: 'New notification',
-      message,
-    });
-
-    return { success: true, message: 'Email notification sent' };
   }
 
   async remove(id: string) {
@@ -642,7 +744,7 @@ export class StudentService {
     }
   }
 
-  async updateStatus(id: string, status:  number) {
+  async updateStatus(id: string, status: number) {
     try {
       this.logger.log(`Updating student status for ID: ${id} to: ${status}`);
 
