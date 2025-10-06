@@ -263,4 +263,16 @@ export class ScheduleEventService {
             return { success: false, message: "Failed to fetch schedule events", error: error.message };
         }
     }
+
+
+    async getSingleScheduleEvent(id: string) {
+        try {
+            const event = await this.prisma.scheduleEvent.findFirst({ where: { id, deleted_at: null } });
+            if (!event) throw new NotFoundException('Schedule event not found');
+            return { success: true, message: 'Schedule event retrieved successfully', data: event };
+        } catch (error) {
+            this.logger.error(`Failed to get single schedule event: ${error.message}`, error.stack);
+            return { success: false, message: 'Failed to fetch schedule event', error: error.message };
+        }
+    }
 }

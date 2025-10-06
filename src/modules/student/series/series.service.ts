@@ -1100,8 +1100,136 @@ export class SeriesService {
             });
 
             this.logger.log(`Updated course progress: ${completedLessons}/${totalLessons} lessons completed (${completionPercentage}%) - Course ${isCourseCompleted ? 'COMPLETED' : 'IN PROGRESS'}`);
+
+            // If course is completed, automatically start the next course
+            if (isCourseCompleted) {
+                await this.startNextCourse(userId, courseId, seriesId);
+            }
         } catch (error) {
             this.logger.error(`Error updating course progress: ${error.message}`);
+        }
+    }
+
+    /**
+     * Start the next course automatically when current course is completed
+     */
+    async startNextCourse(userId: string, completedCourseId: string, seriesId: string): Promise<void> {
+        try {
+            this.logger.log(`Starting next course for user ${userId} after completing course ${completedCourseId}`);
+
+            // Get current course position
+            const currentCourse = await this.prisma.course.findFirst({
+                where: {
+                    id: completedCourseId,
+                    deleted_at: null
+                },
+                select: { position: true },
+            });
+
+            if (!currentCourse) {
+                this.logger.warn(`Current course ${completedCourseId} not found`);
+                return;
+            }
+
+            // Find next course in the series
+            const nextCourse = await this.prisma.course.findFirst({
+                where: {
+                    series_id: seriesId,
+                    position: currentCourse.position + 1,
+                    deleted_at: null,
+                },
+                select: {
+                    id: true,
+                    title: true,
+                    position: true
+                },
+            });
+
+            if (!nextCourse) {
+                this.logger.log(`No next course found for user ${userId} in series ${seriesId} - All courses completed!`);
+                return;
+            }
+
+            // Check if course progress already exists for next course
+            const existingProgress = await this.prisma.courseProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    course_id: nextCourse.id,
+                },
+            });
+
+            if (!existingProgress) {
+                // Create course progress for next course
+                await this.prisma.courseProgress.create({
+                    data: {
+                        user_id: userId,
+                        course_id: nextCourse.id,
+                        series_id: seriesId,
+                        status: 'in_progress',
+                        completion_percentage: 0,
+                        is_completed: false,
+                        started_at: new Date(),
+                    },
+                });
+
+                this.logger.log(`Started course progress for next course: ${nextCourse.title} (Position: ${nextCourse.position})`);
+            } else {
+                // Update existing progress to in_progress if it was pending
+                if (existingProgress.status === 'pending') {
+                    await this.prisma.courseProgress.update({
+                        where: {
+                            user_id_course_id: {
+                                user_id: userId,
+                                course_id: nextCourse.id,
+                            },
+                        },
+                        data: {
+                            status: 'in_progress',
+                            started_at: new Date(),
+                            updated_at: new Date(),
+                        },
+                    });
+
+                    this.logger.log(`Updated course progress to in_progress for next course: ${nextCourse.title}`);
+                }
+            }
+
+            // Unlock first lesson of next course
+            const firstLesson = await this.prisma.lessonFile.findFirst({
+                where: {
+                    course_id: nextCourse.id,
+                    position: 0,
+                    deleted_at: null,
+                },
+                select: { id: true, title: true },
+            });
+
+            if (firstLesson) {
+                await this.prisma.lessonProgress.upsert({
+                    where: {
+                        user_id_lesson_id: {
+                            user_id: userId,
+                            lesson_id: firstLesson.id,
+                        },
+                    },
+                    update: {
+                        // Keep existing progress
+                    },
+                    create: {
+                        user_id: userId,
+                        lesson_id: firstLesson.id,
+                        course_id: nextCourse.id,
+                        series_id: seriesId,
+                        is_completed: false,
+                        is_viewed: false,
+                    },
+                });
+
+                this.logger.log(`Unlocked first lesson of next course: ${firstLesson.title}`);
+            }
+
+        } catch (error) {
+            this.logger.error(`Error starting next course: ${error.message}`);
         }
     }
 
@@ -1140,25 +1268,26 @@ export class SeriesService {
 
             // Calculate progress percentage
             const progressPercentage = Math.round((completedLessons / totalLessons) * 100);
+            const isSeriesCompleted = progressPercentage === 100;
 
             // Update enrollment progress
             await this.prisma.enrollment.updateMany({
                 where: {
                     user_id: userId,
                     series_id: seriesId,
-                    status: 'ACTIVE' as any,
+                    status: { in: ['ACTIVE', 'COMPLETED'] as any },
                     payment_status: 'completed',
                     deleted_at: null,
                 },
                 data: {
                     progress_percentage: progressPercentage,
-                    status: 'COMPLETED' as any,
+                    status: isSeriesCompleted ? 'COMPLETED' as any : 'ACTIVE' as any,
                     last_accessed_at: new Date(),
                     updated_at: new Date(),
                 },
             });
 
-            this.logger.log(`Updated enrollment progress: ${completedLessons}/${totalLessons} lessons completed (${progressPercentage}%)`);
+            this.logger.log(`Updated enrollment progress: ${completedLessons}/${totalLessons} lessons completed (${progressPercentage}%) - Enrollment ${isSeriesCompleted ? 'COMPLETED' : 'ACTIVE'}`);
         } catch (error) {
             this.logger.error(`Error updating enrollment progress: ${error.message}`);
         }

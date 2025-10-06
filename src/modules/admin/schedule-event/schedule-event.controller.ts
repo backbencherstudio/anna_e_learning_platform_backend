@@ -57,4 +57,11 @@ export class ScheduleEventController {
       seriesId,
     );
   }
+
+    // get single schedule event
+    @Get(':id')
+    @HttpCode(HttpStatus.OK)
+    async getSingleScheduleEvent(@Req() req: any, @Param('id') id: string) {
+      return this.scheduleEventService.getSingleScheduleEvent( id);
+    }
 }

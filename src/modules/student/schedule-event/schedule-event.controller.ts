@@ -1,4 +1,4 @@
-import { Controller, Get, HttpCode, HttpStatus, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, HttpCode, HttpStatus, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ScheduleEventService } from './schedule-event.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guard/role/roles.guard';
@@ -35,5 +35,12 @@ export class ScheduleEventController {
       status,
       seriesId,
     );
+  }
+
+  // get single schedule event
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  async getSingleScheduleEvent(@Req() req: any, @Param('id') id: string) {
+    return this.scheduleEventService.getSingleScheduleEvent( id);
   }
 }
