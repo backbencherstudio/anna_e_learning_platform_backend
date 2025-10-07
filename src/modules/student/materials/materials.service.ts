@@ -30,7 +30,7 @@ export class MaterialsService {
             // Base where clause for enrolled materials
             const enrollmentWhere = {
                 user_id: userId,
-                status: 'ACTIVE' as any,
+                status: {in: ['ACTIVE', 'COMPLETED'] as any},
                 payment_status: 'completed',
                 deleted_at: null,
             };

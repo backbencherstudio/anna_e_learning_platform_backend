@@ -11,6 +11,7 @@ import { ContactModule } from './contact/contact.module';
 import { ScheduleEventModule } from './schedule-event/schedule-event.module';
 import { NotificationModule } from './notification/notification.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CertificateModule } from './certificate/certificate.module';
 ;
 
 @Module({
@@ -27,6 +28,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
         ScheduleEventModule,
         NotificationModule,
         DashboardModule,
+        CertificateModule,
     ],
 })
 export class StudentModule { }
