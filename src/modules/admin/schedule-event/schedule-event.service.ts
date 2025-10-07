@@ -275,4 +275,16 @@ export class ScheduleEventService {
             return { success: false, message: 'Failed to fetch schedule event', error: error.message };
         }
     }
+
+    async remove(id: string) {
+        try {
+            const event = await this.prisma.scheduleEvent.findUnique({ where: { id, deleted_at: null } });
+            if (!event) throw new NotFoundException('Schedule event not found');
+            await this.prisma.scheduleEvent.delete({ where: { id } });
+            return { success: true, message: 'Schedule event deleted successfully', data: { id } };
+        } catch (error) {
+            this.logger.error(`Failed to delete schedule event: ${error.message}`, error.stack);
+            return { success: false, message: 'Failed to delete schedule event', error: error.message };
+        }
+    }
 }

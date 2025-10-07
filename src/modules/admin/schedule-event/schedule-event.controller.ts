@@ -64,4 +64,11 @@ export class ScheduleEventController {
     async getSingleScheduleEvent(@Req() req: any, @Param('id') id: string) {
       return this.scheduleEventService.getSingleScheduleEvent( id);
     }
+
+    //delete schedule event
+    @Delete(':id')
+    @HttpCode(HttpStatus.OK)
+    async deleteScheduleEvent(@Param('id') id: string) {
+      return this.scheduleEventService.remove(id);
+    }
 }
