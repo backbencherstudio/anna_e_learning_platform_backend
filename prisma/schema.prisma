@@ -1177,7 +1177,7 @@ model ScheduleEvent {
   metadata    Json?
 
   user_id       String?
-  user          User?       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user          User?       @relation(fields: [user_id], references: [id], onDelete: SetNull)
   // optional links for context
   assignment_id String?
   assignment    Assignment? @relation(fields: [assignment_id], references: [id], onDelete: SetNull)
