@@ -2037,6 +2037,15 @@
   dependencies:
     "@types/node" "*"
 
+"@types/passport-facebook@^3.0.3":
+  version "3.0.3"
+  resolved "https://registry.yarnpkg.com/@types/passport-facebook/-/passport-facebook-3.0.3.tgz#d73d79332b80372d5f38b2b6901e22c1326387c8"
+  integrity sha512-4cwyK2bGMo4Di8eMMLjf9JgDbpptRVYmStuy0ETZSaVo6fcY9+BtB9hCUmLEobUtqNHoIoXIWOCdDA2UynCUyg==
+  dependencies:
+    "@types/express" "*"
+    "@types/passport" "*"
+    "@types/passport-oauth2" "*"
+
 "@types/passport-google-oauth20@^2.0.16":
   version "2.0.16"
   resolved "https://registry.yarnpkg.com/@types/passport-google-oauth20/-/passport-google-oauth20-2.0.16.tgz#9e39c1203d56496d89392538e6109626e253bc28"
