@@ -34,7 +34,7 @@ async function bootstrap() {
 
   // Configure CORS to handle preflight requests properly
   app.enableCors({
-    origin: ['*', 'http://localhost:3000', 'http://localhost:4000', 'http://127.0.0.1:5500', 'https://anna-eagles-academy.vercel.app', 'https://match-toolbar-strengthen-railroad.trycloudflare.com'],
+    origin: ['*', 'http://localhost:3000', 'http://localhost:4000', 'http://127.0.0.1:5501', 'https://anna-eagles-academy.vercel.app', 'https://match-toolbar-strengthen-railroad.trycloudflare.com'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Origin',

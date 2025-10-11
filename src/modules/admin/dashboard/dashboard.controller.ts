@@ -15,7 +15,16 @@ export class DashboardController {
   @HttpCode(HttpStatus.OK)
   async getDashboard(
     @Query('date') date?: string,
+    @Query('period') period?: 'week' | 'month' | 'year',
   ) {
-    return this.dashboardService.getDashboard(date);
+    return this.dashboardService.getDashboard(date, period);
+  }
+
+  @Get('revenue-chart')
+  @HttpCode(HttpStatus.OK)
+  async getRevenueChartData(
+    @Query('period') period?: 'week' | 'month' | 'year',
+  ) {
+    return this.dashboardService.getRevenueChartData(period);
   }
 }

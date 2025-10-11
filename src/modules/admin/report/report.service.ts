@@ -16,7 +16,7 @@ export class ReportService {
     ) {
     }
 
-    async getWebsiteTraffic() {
+    async getWebsiteTraffic(period: 'week' | 'month' | 'year' = 'week') {
         try {
             const now = new Date();
 
@@ -73,6 +73,8 @@ export class ReportService {
                 }),
             ]);
 
+            const websiteTrafficTrends = await this.getWebsiteTrafficTrends(period);
+
             return {
                 success: true,
                 message: 'Website traffic retrieved successfully',
@@ -81,12 +83,255 @@ export class ReportService {
                     weekly_users: weeklyUsers,
                     monthly_users: monthlyUsers,
                     total_visitors: totalUsers,
+                    website_traffic_trends: websiteTrafficTrends,
                 },
             };
         } catch (error) {
             this.logger.error('Error calculating visitor analytics:', error);
             throw error;
         }
+    }
+
+    /**
+     * Get detailed website traffic trends data for charts with daily breakdown
+     */
+    async getWebsiteTrafficTrends(period: 'week' | 'month' | 'year' = 'week') {
+        try {
+            const now = new Date();
+            let currentPeriodStart: Date;
+            let lastPeriodStart: Date;
+            let lastPeriodEnd: Date;
+            let currentPeriodLabel: string;
+            let lastPeriodLabel: string;
+
+            switch (period) {
+                case 'week':
+                    // Get current week start (Monday)
+                    const currentDay = now.getDay();
+                    const daysToMonday = currentDay === 0 ? -6 : 1 - currentDay;
+                    currentPeriodStart = new Date(now);
+                    currentPeriodStart.setDate(now.getDate() + daysToMonday);
+                    currentPeriodStart.setHours(0, 0, 0, 0);
+
+                    // Get last week start and end
+                    lastPeriodStart = new Date(currentPeriodStart);
+                    lastPeriodStart.setDate(currentPeriodStart.getDate() - 7);
+                    lastPeriodEnd = new Date(lastPeriodStart);
+                    lastPeriodEnd.setDate(lastPeriodStart.getDate() + 6);
+                    lastPeriodEnd.setHours(23, 59, 59, 999);
+
+                    currentPeriodLabel = 'This week';
+                    lastPeriodLabel = 'Last week';
+                    break;
+
+                case 'month':
+                    currentPeriodStart = new Date(now.getFullYear(), now.getMonth(), 1);
+                    lastPeriodStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+                    lastPeriodEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+                    lastPeriodEnd.setHours(23, 59, 59, 999);
+
+                    currentPeriodLabel = 'This month';
+                    lastPeriodLabel = 'Last month';
+                    break;
+
+                case 'year':
+                    currentPeriodStart = new Date(now.getFullYear(), 0, 1);
+                    lastPeriodStart = new Date(now.getFullYear() - 1, 0, 1);
+                    lastPeriodEnd = new Date(now.getFullYear() - 1, 11, 31);
+                    lastPeriodEnd.setHours(23, 59, 59, 999);
+
+                    currentPeriodLabel = 'This year';
+                    lastPeriodLabel = 'Last year';
+                    break;
+
+                default:
+                    throw new Error('Invalid period. Must be week, month, or year');
+            }
+
+            // Get current period user registrations
+            const currentPeriodData = await this.prisma.user.groupBy({
+                by: ['created_at'],
+                where: {
+                    deleted_at: null,
+                    created_at: {
+                        gte: currentPeriodStart,
+                    },
+                },
+                _count: {
+                    id: true,
+                },
+                orderBy: {
+                    created_at: 'asc',
+                },
+            });
+
+            // Get last period user registrations
+            const lastPeriodData = await this.prisma.user.groupBy({
+                by: ['created_at'],
+                where: {
+                    deleted_at: null,
+                    created_at: {
+                        gte: lastPeriodStart,
+                        lte: lastPeriodEnd,
+                    },
+                },
+                _count: {
+                    id: true,
+                },
+                orderBy: {
+                    created_at: 'asc',
+                },
+            });
+
+            // Process data based on period type
+            let currentPeriodTraffic: any[];
+            let lastPeriodTraffic: any[];
+
+            if (period === 'week') {
+                // For week: group by day name (Sun, Mon, Tue, etc.)
+                currentPeriodTraffic = this.groupByDay(currentPeriodData);
+                lastPeriodTraffic = this.groupByDay(lastPeriodData);
+            } else if (period === 'month') {
+                // For month: group by month name
+                currentPeriodTraffic = this.groupByMonth(currentPeriodData);
+                lastPeriodTraffic = this.groupByMonth(lastPeriodData);
+            } else if (period === 'year') {
+                // For year: group by year
+                currentPeriodTraffic = this.groupByYear(currentPeriodData);
+                lastPeriodTraffic = this.groupByYear(lastPeriodData);
+            }
+
+            // Calculate total users for summary
+            const currentTotal = currentPeriodTraffic.reduce((sum, item) => sum + item.users, 0);
+            const lastTotal = lastPeriodTraffic.reduce((sum, item) => sum + item.users, 0);
+
+            // Calculate growth percentage
+            let growthPercentage = 0;
+            if (lastTotal > 0) {
+                growthPercentage = ((currentTotal - lastTotal) / lastTotal) * 100;
+            } else if (currentTotal > 0) {
+                growthPercentage = 100;
+            }
+
+            // Get additional traffic metrics
+            const totalUsers = await this.prisma.user.count({
+                where: {
+                    deleted_at: null,
+                },
+            });
+
+            // Get active users (users who have enrollments)
+            const activeUsers = await this.prisma.user.count({
+                where: {
+                    deleted_at: null,
+                    enrollments: {
+                        some: {
+                            deleted_at: null,
+                        },
+                    },
+                },
+            });
+
+            return {
+                summary: {
+                    current_period_users: currentTotal,
+                    previous_period_users: lastTotal,
+                    growth_percentage: Math.round(growthPercentage * 100) / 100,
+                    growth_direction: growthPercentage >= 0 ? 'up' : 'down',
+                    current_period_label: currentPeriodLabel,
+                    previous_period_label: lastPeriodLabel,
+                    period_type: period,
+                    total_users: totalUsers,
+                    active_users: activeUsers,
+                },
+                chart_data: {
+                    current_period: {
+                        label: currentPeriodLabel,
+                        data: currentPeriodTraffic,
+                    },
+                    last_period: {
+                        label: lastPeriodLabel,
+                        data: lastPeriodTraffic,
+                    },
+                },
+            };
+        } catch (error) {
+            this.logger.error('Error calculating website traffic trends:', error);
+            return {
+                success: false,
+                message: 'Failed to fetch website traffic trends data',
+                error: error.message,
+            };
+        }
+    }
+
+
+    /**
+     * Group data by day name for weekly view
+     */
+    private groupByDay(data: any[]) {
+        const dailyData: { [key: string]: number } = {};
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        // Initialize all days with 0
+        dayNames.forEach(day => {
+            dailyData[day] = 0;
+        });
+
+        // Add actual data
+        data.forEach(item => {
+            const dayIndex = new Date(item.created_at).getDay();
+            const dayName = dayNames[dayIndex];
+            dailyData[dayName] += item._count.id;
+        });
+
+        return dayNames.map(day => ({
+            day: day,
+            users: dailyData[day],
+        }));
+    }
+
+    /**
+     * Group data by month name for monthly view
+     */
+    private groupByMonth(data: any[]) {
+        const monthlyData: { [key: string]: number } = {};
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+        // Initialize all months with 0
+        monthNames.forEach(month => {
+            monthlyData[month] = 0;
+        });
+
+        // Add actual data
+        data.forEach(item => {
+            const monthIndex = new Date(item.created_at).getMonth();
+            const monthName = monthNames[monthIndex];
+            monthlyData[monthName] += item._count.id;
+        });
+
+        return monthNames.map(month => ({
+            month: month,
+            users: monthlyData[month],
+        }));
+    }
+
+    /**
+     * Group data by year for yearly view
+     */
+    private groupByYear(data: any[]) {
+        const yearlyData: { [key: string]: number } = {};
+
+        data.forEach(item => {
+            const year = new Date(item.created_at).getFullYear().toString();
+            yearlyData[year] = (yearlyData[year] || 0) + item._count.id;
+        });
+
+        return Object.entries(yearlyData).map(([year, users]) => ({
+            year: year,
+            users: users,
+        }));
     }
 
     /**

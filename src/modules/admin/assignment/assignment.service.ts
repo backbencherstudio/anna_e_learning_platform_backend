@@ -354,10 +354,10 @@ export class AssignmentService {
       });
 
       const publishedAssignmentsWithStats = publishedAssignments.map(assignment => {
-        const remainingTime = assignment.due_at ? DateHelper.diff(assignment.due_at.toISOString(), DateHelper.now().toISOString(), 'days') : null;
+        const remainingTime = assignment.due_at ? DateHelper.getRemainingTime(assignment.due_at) : { formatted: '0 days' };
         return {
           ...assignment,
-          remaining_time: remainingTime,
+          remaining_time: remainingTime.formatted,
         };
       });
 

@@ -85,7 +85,7 @@ export class EnrollmentService {
             });
 
             // decrise available site
-          //  await this.prisma.series.update({ where: { id: checkout.series_id }, data: { available_site: series.available_site - 1 } });
+            //  await this.prisma.series.update({ where: { id: checkout.series_id }, data: { available_site: series.available_site - 1 } });
 
             await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
 
@@ -254,6 +254,101 @@ export class EnrollmentService {
         });
 
         this.logger.log(`Payment completed and course progress initialized for enrollment ${enrollment.id}`);
+    }
+
+    /**
+     * Delete enrollment and associated payment transactions
+     */
+    async deleteEnrollment(enrollmentId: string, userId: string) {
+        try {
+            this.logger.log(`Deleting enrollment ${enrollmentId} for user ${userId}`);
+
+            // Check if enrollment exists and belongs to the user
+            const enrollment = await this.prisma.enrollment.findFirst({
+                where: {
+                    id: enrollmentId,
+                    user_id: userId,
+                    deleted_at: null,
+                },
+                include: {
+                    payment_transactions: true,
+                },
+            });
+
+            if (!enrollment) {
+                throw new NotFoundException('Enrollment not found or does not belong to user');
+            }
+
+            // Check if enrollment is already completed
+            if (enrollment.status === 'COMPLETED') {
+                throw new BadRequestException('Cannot delete completed enrollment');
+            }
+
+            // Soft delete the enrollment
+            await this.prisma.enrollment.update({
+                where: { id: enrollmentId },
+                data: {
+                    deleted_at: new Date(),
+                    status: 'CANCELLED',
+                },
+            });
+
+            // Delete all associated payment transactions
+            if (enrollment.payment_transactions && enrollment.payment_transactions.length > 0) {
+                await this.prisma.paymentTransaction.deleteMany({
+                    where: {
+                        enrollment_id: enrollmentId,
+                    },
+                });
+                this.logger.log(`Deleted ${enrollment.payment_transactions.length} payment transactions for enrollment ${enrollmentId}`);
+            }
+
+            // If there was a pending payment intent, you might want to cancel it
+            if (enrollment.payment_reference_number) {
+                try {
+                    await StripePayment.cancelPaymentIntent(enrollment.payment_reference_number);
+                    this.logger.log(`Cancelled payment intent ${enrollment.payment_reference_number}`);
+                } catch (stripeError) {
+                    this.logger.warn(`Failed to cancel payment intent ${enrollment.payment_reference_number}:`, stripeError.message);
+                    // Don't throw error here as the main deletion was successful
+                }
+            }
+
+            // Restore available site if needed
+            if (enrollment.series_id) {
+                const series = await this.prisma.series.findUnique({
+                    where: { id: enrollment.series_id },
+                });
+
+                if (series) {
+                    await this.prisma.series.update({
+                        where: { id: enrollment.series_id },
+                        data: {
+                            available_site: series.available_site + 1,
+                        },
+                    });
+                    this.logger.log(`Restored available site for series ${enrollment.series_id}`);
+                }
+            }
+
+            return {
+                success: true,
+                message: 'Enrollment deleted successfully',
+                data: {
+                    enrollment_id: enrollmentId,
+                    deleted_transactions: enrollment.payment_transactions?.length || 0,
+                    cancelled_payment_intent: !!enrollment.payment_reference_number,
+                },
+            };
+        } catch (error) {
+            this.logger.error(`Error deleting enrollment ${enrollmentId}:`, error.stack);
+
+            if (error instanceof BadRequestException || error instanceof NotFoundException) {
+                throw error;
+            }
+
+            throw new BadRequestException(`Failed to delete enrollment: ${error.message}`);
+        }
     }
 
 }

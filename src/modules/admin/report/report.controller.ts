@@ -14,8 +14,10 @@ export class ReportController {
 
   @Get('website-traffic')
   @HttpCode(HttpStatus.OK)
-  async getWebsiteTraffic() {
-    return this.reportService.getWebsiteTraffic();
+  async getWebsiteTraffic(
+    @Query('period') period?: 'week' | 'month' | 'year',
+  ) {
+    return this.reportService.getWebsiteTraffic(period);
   }
 
   @Get('series-progress')
