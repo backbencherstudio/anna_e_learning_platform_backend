@@ -84,8 +84,8 @@ export class SeriesService {
             total_price: createSeriesDto.total_price,
             course_type: createSeriesDto.course_type,
             note: createSeriesDto.note,
-            available_site: createSeriesDto.available_site,
-            total_site: createSeriesDto.available_site,
+            available_site: createSeriesDto.available_site || -1,
+            total_site: createSeriesDto.available_site || -1,
             language_id: createSeriesDto.language_id,
           },
         });
@@ -253,8 +253,6 @@ export class SeriesService {
           this.logger.error(`Failed to schedule queue job for series ${result.id}: ${error.message}`, error.stack);
           // Don't fail the entire creation process if queue scheduling fails
         }
-      } else if (!result.start_date && !result.end_date) {
-        await this.seriesPublishService.publishSeriesImmediately(result.id);
       }
 
 
@@ -1077,7 +1075,7 @@ export class SeriesService {
 
       // check if any enrollment exists
       const enrollment = await this.prisma.enrollment.findFirst({
-        where: { series_id: id, status: 'ACTIVE' },
+        where: { series_id: id, status: { in: ['ACTIVE', 'COMPLETED'] } },
         select: { id: true, status: true },
       });
       if (enrollment) {

@@ -1,4 +1,4 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, UsePipes, ValidationPipe, UseGuards, Req, Get, Param, Query } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus, UsePipes, ValidationPipe, UseGuards, Req, Get, Param, Query, Delete } from '@nestjs/common';
 import { EnrollmentService } from './enrollment.service';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
@@ -26,5 +26,15 @@ export class EnrollmentController {
   async getStudentEnrollments(@Req() req: any) {
     const user_id = req.user.userId;
     return this.enrollmentService.getStudentEnrollments(user_id);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  async deleteEnrollment(
+    @Param('id') enrollmentId: string,
+    @Req() req: any,
+  ) {
+    const userId = req.user.userId;
+    return this.enrollmentService.deleteEnrollment(enrollmentId, userId);
   }
 }

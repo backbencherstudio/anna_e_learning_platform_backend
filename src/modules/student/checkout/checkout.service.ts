@@ -9,16 +9,20 @@ export class CheckoutService {
     constructor(private readonly prisma: PrismaService) { }
 
 
-    async findAll(page: number = 1, limit: number = 10, search?: string): Promise<any> {
+    async findAll(page: number = 1, limit: number = 10, search?: string, type?: string): Promise<any> {
         try {
             const skip = (page - 1) * limit;
-            const where = search ? {
+            const where: any = search ? {
                 OR: [
                     { title: { contains: search, mode: 'insensitive' as any } },
                     { summary: { contains: search, mode: 'insensitive' as any } },
                     { description: { contains: search, mode: 'insensitive' as any } },
                 ],
             } : {};
+
+            if (type) {
+                where.course_type = type;
+            }
 
             const [series, total] = await Promise.all([
                 this.prisma.series.findMany({

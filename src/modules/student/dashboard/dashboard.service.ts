@@ -4,6 +4,7 @@ import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
 import appConfig from 'src/config/app.config';
 import { SeriesService } from '../series/series.service';
 import { ScheduleEventService } from '../schedule-event/schedule-event.service';
+import { MaterialsService } from '../materials/materials.service';
 
 @Injectable()
 export class DashboardService {
@@ -11,7 +12,8 @@ export class DashboardService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly seriesService: SeriesService,
-        private readonly scheduleEventService: ScheduleEventService
+        private readonly scheduleEventService: ScheduleEventService,
+        private readonly materialsService: MaterialsService
     ) { }
 
     async TeacherSection() {
@@ -28,11 +30,11 @@ export class DashboardService {
                 ]
             });
 
-            // Group sections by section_type
+            // Group sections by section_type and limit to 3 items each
             const groupedSections = {
-                scripture: sections.filter(section => section.section_type === 'SCRIPTURE'),
-                announcement: sections.filter(section => section.section_type === 'ANNOUNCEMENT'),
-                encouragement: sections.filter(section => section.section_type === 'ENCOURAGEMENT')
+                scripture: sections.filter(section => section.section_type === 'SCRIPTURE').slice(0, 3),
+                announcement: sections.filter(section => section.section_type === 'ANNOUNCEMENT').slice(0, 3),
+                encouragement: sections.filter(section => section.section_type === 'ENCOURAGEMENT').slice(0, 3)
             };
 
             // Add file URLs to each section
@@ -71,8 +73,9 @@ export class DashboardService {
         try {
             const date = new Date();
             const teacherSections = await this.TeacherSection();
-            const enrolledSeries = await this.seriesService.getEnrolledSeries(userId);
+            const enrolledSeries = await this.seriesService.getEnrolledSeries(userId, 1, 1); // Limit to 1 series
             const scheduleEvents = await this.scheduleEventService.listForEnrolledSeries(userId, date);
+            const materials = await this.materialsService.findAll(userId, 1, 3);
 
             return {
                 success: true,
@@ -81,7 +84,8 @@ export class DashboardService {
                     teacher_sections: teacherSections.data,
                     enrolled_series: enrolledSeries.data.series,
                     today: new Date(),
-                    schedule_events: scheduleEvents.data.events
+                    schedule_events: scheduleEvents.data.events,
+                    materials: materials.data.materials
                 }
             };
         }

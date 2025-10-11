@@ -85,6 +85,7 @@
     "@types/multer": "1.4.12",
     "@types/node": "22.14.1",
     "@types/nodemailer": "6.4.17",
+    "@types/passport-facebook": "^3.0.3",
     "@types/passport-google-oauth20": "^2.0.16",
     "@types/passport-local": "1.0.38",
     "@types/qrcode": "^1.5.5",

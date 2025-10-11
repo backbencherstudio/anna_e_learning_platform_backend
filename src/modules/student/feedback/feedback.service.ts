@@ -22,6 +22,9 @@ export class FeedbackService {
         storedFileName = fileName;
       }
 
+      const course = await this.prisma.course.findUnique({ where: { id: dto.course_id } });
+      if (!course) throw new NotFoundException('Course not found');
+
       const feedback = await this.prisma.feedback.create({
         data: {
           user_id: userId,

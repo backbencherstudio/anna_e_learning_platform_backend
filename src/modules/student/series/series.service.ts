@@ -151,16 +151,16 @@ export class SeriesService {
                             course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
                         }
 
-                        if (course.lesson_files && course.lesson_files.length > 0) {
-                            for (const lessonFile of course.lesson_files) {
-                                if (lessonFile.url) {
-                                    lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
-                                }
-                                if (lessonFile.doc) {
-                                    lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
-                                }
-                            }
-                        }
+                        // if (course.lesson_files && course.lesson_files.length > 0) {
+                        //     for (const lessonFile of course.lesson_files) {
+                        //         if (lessonFile.url) {
+                        //             lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                        //         }
+                        //         if (lessonFile.doc) {
+                        //             lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+                        //         }
+                        //     }
+                        // }
                     }
                 }
             }
@@ -365,16 +365,16 @@ export class SeriesService {
                         course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
                     }
 
-                    if (course.lesson_files && course.lesson_files.length > 0) {
-                        for (const lessonFile of course.lesson_files) {
-                            if (lessonFile.url) {
-                                lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
-                            }
-                            if (lessonFile.doc) {
-                                lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
-                            }
-                        }
-                    }
+                    // if (course.lesson_files && course.lesson_files.length > 0) {
+                    //     for (const lessonFile of course.lesson_files) {
+                    //         if (lessonFile.url) {
+                    //             lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                    //         }
+                    //         if (lessonFile.doc) {
+                    //             lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+                    //         }
+                    //     }
+                    // }
                 }
             }
 
@@ -1408,12 +1408,12 @@ export class SeriesService {
             // Add lesson progress and file URLs
             if (courseWithEnrollment.lesson_files && courseWithEnrollment.lesson_files.length > 0) {
                 for (const lessonFile of courseWithEnrollment.lesson_files) {
-                    if (lessonFile.url) {
-                        lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
-                    }
-                    if (lessonFile.doc) {
-                        lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
-                    }
+                    // if (lessonFile.url) {
+                    //     lessonFile['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFile.url);
+                    // }
+                    // if (lessonFile.doc) {
+                    //     lessonFile['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFile.doc);
+                    // }
 
                     // Get lesson progress for this specific lesson
                     const lessonProgress = await this.prisma.lessonProgress.findFirst({
@@ -1461,6 +1461,8 @@ export class SeriesService {
     async findOneLesson(userId: string, lessonId: string): Promise<SeriesResponse<any>> {
         try {
             this.logger.log(`Fetching enrolled lesson ${lessonId} for user: ${userId}`);
+
+            //
 
             // First check if user is enrolled in the series that contains this lesson
             const enrollment = await this.prisma.enrollment.findFirst({
