@@ -1075,7 +1075,7 @@ export class SeriesService {
 
       // check if any enrollment exists
       const enrollment = await this.prisma.enrollment.findFirst({
-        where: { series_id: id, status: 'ACTIVE' },
+        where: { series_id: id, status: { in: ['ACTIVE', 'COMPLETED'] } },
         select: { id: true, status: true },
       });
       if (enrollment) {
