@@ -932,7 +932,7 @@ export class SeriesService {
             const firstLesson = await this.prisma.lessonFile.findFirst({
                 where: {
                     course_id: firstCourse.id,
-                    position: 0,
+                    position: 1,
                     deleted_at: null,
                 },
                 select: { id: true },

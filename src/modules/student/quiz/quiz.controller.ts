@@ -22,17 +22,18 @@ export class QuizController {
     @Query('search') search?: string,
     @Query('series_id') series_id?: string,
     @Query('course_id') course_id?: string,
+    @Query('submission_status') submission_status?: 'submitted' | 'not_submitted',
   ) {
     const userId = req.user?.userId;
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
-    return this.quizService.findAll(userId, pageNum, limitNum, search, series_id, course_id);
+    return this.quizService.findAll(userId, pageNum, limitNum, search, series_id, course_id, submission_status);
   }
 
   @Get(':id')
   @HttpCode(HttpStatus.OK)
   async findOne(@Req() req: any, @Param('id') id: string) {
-    const userId = req.user?.userId 
+    const userId = req.user?.userId
     return this.quizService.findOne(userId, id);
   }
 
@@ -44,14 +45,14 @@ export class QuizController {
     @Param('id') id: string,
     @Body() dto: SubmitQuizDto,
   ) {
-    const userId = req.user?.userId 
+    const userId = req.user?.userId
     return this.quizService.submit(userId, id, dto);
   }
 
   @Get(':id/submission')
   @HttpCode(HttpStatus.OK)
   async getSubmission(@Req() req: any, @Param('id') id: string) {
-    const userId = req.user?.userId 
+    const userId = req.user?.userId
     return this.quizService.getSubmission(userId, id);
   }
 }

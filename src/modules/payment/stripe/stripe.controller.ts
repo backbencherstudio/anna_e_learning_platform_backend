@@ -3,10 +3,11 @@ import { StripeService } from './stripe.service';
 import { Request } from 'express';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
 
-
 @Controller('payment/stripe')
 export class StripeController {
-  constructor(private readonly stripeService: StripeService) { }
+  constructor(
+    private readonly stripeService: StripeService,
+  ) { }
 
   @Post('webhook')
   async handleWebhook(
@@ -43,6 +44,9 @@ export class StripeController {
             paid_currency: paymentIntent.currency,
             raw_status: paymentIntent.status,
           });
+
+          // Handle payment success - unlock first lesson
+          //await this.seriesService.unlockFirstLessonForUser(paymentIntent.id);
           break;
         case 'payment_intent.payment_failed':
           const failedPaymentIntent = event.data.object;

@@ -21,11 +21,12 @@ export class AssignmentController {
     @Query('search') search?: string,
     @Query('series_id') series_id?: string,
     @Query('course_id') course_id?: string,
+    @Query('submission_status') submission_status?: 'submitted' | 'not_submitted',
   ) {
     const userId = req.user?.userId;
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
-    return this.assignmentService.findAll(userId, pageNum, limitNum, search, series_id, course_id);
+    return this.assignmentService.findAll(userId, pageNum, limitNum, search, series_id, course_id, submission_status);
   }
 
   @Get(':id')

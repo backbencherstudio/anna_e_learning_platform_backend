@@ -219,9 +219,37 @@ export class CheckoutService {
         try {
             const item = await this.prisma.checkout.findFirst({
                 where: { id, user_id: userId, deleted_at: null },
-                include: { series: { select: { id: true, title: true, thumbnail: true, total_price: true } } },
+                include: {
+                    series: {
+                        select: {
+                            id: true, title: true, thumbnail: true, total_price: true,
+                            courses: { select: { id: true, title: true, price: true } }
+                        }
+                    }
+                }
             });
             if (!item) throw new NotFoundException('Checkout not found');
+
+            // set series thumbnail url
+            if (item.series.thumbnail) {
+                item.series['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + item.series.thumbnail);
+            }
+
+            // If code has been applied, get the applied code information
+            if (item.status === 'CODE_APPLIED') {
+                try {
+                    const appliedCodeData = await this.getAppliedCode(userId, id);
+                    if (appliedCodeData.success) {
+                        item['applied_code'] = appliedCodeData.data.applied_code;
+                        item['effective_total'] = appliedCodeData.data.checkout.effective_total;
+                        item.series['courses'] = appliedCodeData.data.series.courses;
+                    }
+                } catch (error) {
+                    // If no applied code found, continue without it
+                    this.logger.warn(`No applied code found for checkout ${id}: ${error.message}`);
+                }
+            }
+
             return { success: true, message: 'Checkout retrieved', data: item };
         } catch (error) {
             this.logger.error(`Checkout getOne failed: ${error.message}`, error.stack);
