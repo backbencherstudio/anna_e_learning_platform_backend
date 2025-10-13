@@ -243,6 +243,19 @@ export class SeriesService {
         }
     }
 
+    async getSeriesTitle(): Promise<SeriesResponse<any>> {
+        const series = await this.prisma.series.findMany({
+            select: { id: true, title: true, created_at: true, courses: { select: { id: true, title: true } } },
+            orderBy: { created_at: 'desc' },
+        });
+
+        return {
+            success: true,
+            message: 'Series title retrieved successfully',
+            data: series,
+        };
+    }
+
     /**
      * Get a single enrolled series by ID
      */
@@ -612,6 +625,8 @@ export class SeriesService {
         last_position?: number;
         completion_percentage?: number;
     }): Promise<SeriesResponse<any>> {
+
+        console.log('completionData', completionData);
         try {
             this.logger.log(`Marking lesson ${lessonId} as completed for user ${userId}`);
 
@@ -681,7 +696,8 @@ export class SeriesService {
                 },
             });
 
-            if (!existingProgress || !existingProgress.is_viewed) {
+            // Allow completion if lesson is viewed or if called from updateVideoProgress (auto-completion)
+            if (!existingProgress || (!existingProgress.is_viewed && !completionData)) {
                 this.logger.warn(`User ${userId} attempted to complete lesson ${lessonId} without viewing it first`);
                 return {
                     success: false,
@@ -742,6 +758,133 @@ export class SeriesService {
             return {
                 success: false,
                 message: 'Failed to mark lesson as completed',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Update video progress and auto-complete lesson if 90%+ watched
+     */
+    async updateVideoProgress(userId: string, lessonId: string, progressData: {
+        time_spent?: number;
+        last_position?: number;
+        completion_percentage?: number;
+    }): Promise<SeriesResponse<any>> {
+        try {
+            this.logger.log(`Updating video progress for lesson ${lessonId}, user ${userId}`);
+
+            // Get lesson details to find course and series
+            const lesson = await this.prisma.lessonFile.findFirst({
+                where: { id: lessonId, deleted_at: null },
+                include: {
+                    course: {
+                        select: {
+                            id: true,
+                            series_id: true,
+                        },
+                    },
+                },
+            });
+
+            if (!lesson || !lesson.course) {
+                return {
+                    success: false,
+                    message: 'Lesson not found',
+                };
+            }
+
+            // Check if user has course progress and enrollment
+            const [courseProgress, enrollment] = await Promise.all([
+                this.prisma.courseProgress.findFirst({
+                    where: {
+                        user_id: userId,
+                        course_id: lesson.course.id,
+                        series_id: lesson.course.series_id,
+                        deleted_at: null,
+                    },
+                }),
+                this.prisma.enrollment.findFirst({
+                    where: {
+                        user_id: userId,
+                        series_id: lesson.course.series_id,
+                        status: { in: ['ACTIVE', 'COMPLETED'] },
+                        deleted_at: null,
+                    },
+                }),
+            ]);
+
+            if (!courseProgress || !enrollment) {
+                return {
+                    success: false,
+                    message: 'You must be enrolled in this course to track progress',
+                };
+            }
+
+            // Update progress using existing schema fields
+            const progress = await this.prisma.lessonProgress.upsert({
+                where: {
+                    user_id_lesson_id: {
+                        user_id: userId,
+                        lesson_id: lessonId,
+                    },
+                },
+                update: {
+                    time_spent: progressData.time_spent,
+                    last_position: progressData.last_position,
+                    completion_percentage: progressData.completion_percentage,
+                    is_viewed: progressData.completion_percentage > 0,
+                    viewed_at: progressData.completion_percentage > 0 ? new Date() : undefined,
+                    updated_at: new Date(),
+                },
+                create: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                    course_id: lesson.course.id,
+                    series_id: lesson.course.series_id,
+                    time_spent: progressData.time_spent,
+                    last_position: progressData.last_position,
+                    completion_percentage: progressData.completion_percentage,
+                    is_viewed: progressData.completion_percentage > 0,
+                    viewed_at: progressData.completion_percentage > 0 ? new Date() : undefined,
+                },
+            });
+
+            // Auto-complete lesson if 90%+ watched
+            if (progressData.completion_percentage >= 90 && !progress.is_completed) {
+                this.logger.log(`Auto-completing lesson ${lessonId} for user ${userId} (${progressData.completion_percentage}% watched)`);
+
+                // Mark lesson as completed
+                const completionResult = await this.markLessonAsCompleted(userId, lessonId, {
+                    time_spent: progressData.time_spent,
+                    last_position: progressData.last_position,
+                    completion_percentage: progressData.completion_percentage,
+                });
+
+                return {
+                    success: true,
+                    message: 'Video progress updated and lesson auto-completed',
+                    data: {
+                        progress,
+                        completion: completionResult.data,
+                        auto_completed: true,
+                    },
+                };
+            }
+
+            return {
+                success: true,
+                message: 'Video progress updated',
+                data: {
+                    progress,
+                    auto_completed: false,
+                },
+            };
+        } catch (error) {
+            this.logger.error(`Error updating video progress: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to update video progress',
                 error: error.message,
             };
         }
@@ -822,7 +965,7 @@ export class SeriesService {
                         const firstLessonOfNextCourse = await this.prisma.lessonFile.findFirst({
                             where: {
                                 course_id: nextCourse.id,
-                                position: 0,
+                                position: 1,
                                 deleted_at: null,
                             },
                             select: { id: true },
@@ -1103,6 +1246,7 @@ export class SeriesService {
 
             // If course is completed, automatically start the next course
             if (isCourseCompleted) {
+                this.logger.log(`Course ${courseId} is completed! Starting next course...`);
                 await this.startNextCourse(userId, courseId, seriesId);
             }
         } catch (error) {
@@ -1115,7 +1259,7 @@ export class SeriesService {
      */
     async startNextCourse(userId: string, completedCourseId: string, seriesId: string): Promise<void> {
         try {
-            this.logger.log(`Starting next course for user ${userId} after completing course ${completedCourseId}`);
+            this.logger.log(`Starting next course for user ${userId} after completing course ${completedCourseId} in series ${seriesId}`);
 
             // Get current course position
             const currentCourse = await this.prisma.course.findFirst({
@@ -1198,7 +1342,7 @@ export class SeriesService {
             const firstLesson = await this.prisma.lessonFile.findFirst({
                 where: {
                     course_id: nextCourse.id,
-                    position: 0,
+                    position: 1,
                     deleted_at: null,
                 },
                 select: { id: true, title: true },
@@ -1226,10 +1370,11 @@ export class SeriesService {
                 });
 
                 this.logger.log(`Unlocked first lesson of next course: ${firstLesson.title}`);
+            } else {
+                this.logger.warn(`No first lesson found for next course ${nextCourse.title}`);
             }
-
         } catch (error) {
-            this.logger.error(`Error starting next course: ${error.message}`);
+            this.logger.error(`Error starting next course: ${error.message}`, error.stack);
         }
     }
 

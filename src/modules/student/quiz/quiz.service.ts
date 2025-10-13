@@ -277,13 +277,23 @@ export class QuizService {
         answers: {
           select: {
             id: true,
-            question_id: true,
-            answer_id: true,
             answer_text: true,
             is_correct: true,
             points_earned: true,
             feedback: true,
-            question: { select: { id: true, prompt: true, points: true, position: true } },
+            question: {
+              select: {
+                id: true, prompt: true, points: true, position: true,
+                answers: { select: { id: true, option: true, is_correct: true } },
+              }
+            },
+            answer: {
+              select: {
+                id: true,
+                option: true,
+                is_correct: true,
+              }
+            },
           },
           orderBy: { id: 'asc' },
         },
