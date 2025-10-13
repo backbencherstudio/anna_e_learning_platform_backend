@@ -1462,7 +1462,19 @@ export class SeriesService {
         try {
             this.logger.log(`Fetching enrolled lesson ${lessonId} for user: ${userId}`);
 
-            //
+            // check if lesson is viewed by user
+            const isViewed = await this.prisma.lessonProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                },
+            });
+            if (!isViewed) {
+                return {
+                    success: false,
+                    message: 'you can not view this lesson',
+                };
+            }
 
             // First check if user is enrolled in the series that contains this lesson
             const enrollment = await this.prisma.enrollment.findFirst({

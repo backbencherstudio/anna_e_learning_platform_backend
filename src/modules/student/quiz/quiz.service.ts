@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { DateHelper } from '../../../common/helper/date.helper';
 
 @Injectable()
 export class QuizService {
@@ -54,6 +55,7 @@ export class QuizService {
           instructions: true,
           total_marks: true,
           published_at: true,
+          due_at: true,
           is_published: true,
           publication_status: true,
           created_at: true,
@@ -80,8 +82,11 @@ export class QuizService {
     // Process quizzes to include submission status
     let processedQuizzes = quizzes.map(quiz => {
       const submission = quiz.submissions[0] || null;
+      const remainingTime = quiz.due_at ? DateHelper.getRemainingTime(quiz.due_at) : { formatted: '0 days' };
+
       return {
         ...quiz,
+        remaining_time: remainingTime.formatted,
         submission_status: submission ? {
           id: submission.id,
           status: submission.status,

@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { DateHelper } from 'src/common/helper/date.helper';
 
 @Injectable()
 export class AssignmentService {
@@ -66,6 +67,7 @@ export class AssignmentService {
           description: true,
           published_at: true,
           publication_status: true,
+          due_at: true,
           total_marks: true,
           created_at: true,
           updated_at: true,
@@ -90,8 +92,10 @@ export class AssignmentService {
     // Process assignments to include submission status
     let processedAssignments = assignments.map(assignment => {
       const submission = assignment.submissions[0] || null;
+      const remainingTime = assignment.due_at ? DateHelper.getRemainingTime(assignment.due_at) : { formatted: '0 days' };
       return {
         ...assignment,
+        remaining_time: remainingTime.formatted,
         submission_status: submission ? {
           id: submission.id,
           status: submission.status,
