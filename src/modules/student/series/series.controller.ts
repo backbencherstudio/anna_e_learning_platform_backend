@@ -31,8 +31,12 @@ export class SeriesController {
   }
 
   @Get('series-title')
-  async getSeriesTitle() {
-    return this.seriesService.getSeriesTitle();
+  async getSeriesTitle(
+    @Req() req: any,
+    @Param('seriesId') seriesId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.getSeriesTitle(userId);
   }
 
   @Get('single/:seriesId')

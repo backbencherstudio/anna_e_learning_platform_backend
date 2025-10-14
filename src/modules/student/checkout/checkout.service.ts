@@ -9,7 +9,7 @@ export class CheckoutService {
     constructor(private readonly prisma: PrismaService) { }
 
 
-    async findAll(page: number = 1, limit: number = 10, search?: string, type?: string): Promise<any> {
+    async findAll(page: number = 1, limit: number = 10, search?: string, type?: string, userId?: string): Promise<any> {
         try {
             const skip = (page - 1) * limit;
             const where: any = search ? {
@@ -22,6 +22,26 @@ export class CheckoutService {
 
             if (type) {
                 where.course_type = type;
+            }
+
+            // Get user enrollments in one query if userId is provided
+            let userEnrollments: any[] = [];
+            if (userId) {
+                userEnrollments = await this.prisma.enrollment.findMany({
+                    where: {
+                        user_id: userId,
+                        status: { in: ['ACTIVE', 'COMPLETED'] as any },
+                        payment_status: 'completed',
+                        deleted_at: null,
+                    },
+                    select: {
+                        series_id: true,
+                        id: true,
+                        status: true,
+                        progress_percentage: true,
+                        enrolled_at: true,
+                    },
+                });
             }
 
             const [series, total] = await Promise.all([
@@ -69,6 +89,13 @@ export class CheckoutService {
             for (const seriesItem of series) {
                 if (seriesItem.thumbnail) {
                     seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
+                }
+
+                // Check if user is enrolled in this series
+                const enrollment = userEnrollments.find(enrollment => enrollment.series_id === seriesItem.id);
+                seriesItem['is_enrolled'] = !!enrollment;
+                if (enrollment) {
+                    seriesItem['enrollment'] = enrollment;
                 }
             }
 

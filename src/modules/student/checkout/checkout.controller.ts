@@ -28,14 +28,16 @@ export class CheckoutController {
   @Get('series')
   @HttpCode(HttpStatus.OK)
   async findAll(
+    @Req() req: any,
     @Query('page') page: string = '1',
     @Query('limit') limit: string = '10',
     @Query('search') search?: string,
     @Query('type') type?: string,
   ) {
+    const userId = req.user?.userId;
     const pageNum = parseInt(page, 10) || 1;
     const limitNum = parseInt(limit, 10) || 10;
-    return this.checkoutService.findAll(pageNum, limitNum, search, type);
+    return this.checkoutService.findAll(pageNum, limitNum, search, type, userId);
   }
 
   @Get(':id/series-summary')
