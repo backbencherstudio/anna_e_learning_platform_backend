@@ -30,6 +30,15 @@ export class SeriesController {
     return this.seriesService.getEnrolledSeries(userId, pageNum, limitNum, search);
   }
 
+  @Get('series-title')
+  async getSeriesTitle(
+    @Req() req: any,
+    @Param('seriesId') seriesId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.getSeriesTitle(userId);
+  }
+
   @Get('single/:seriesId')
   @ApiOperation({ summary: 'Get a single enrolled series by ID' })
   async getEnrolledSeriesById(
@@ -69,6 +78,21 @@ export class SeriesController {
   ): Promise<SeriesResponse<any>> {
     const userId = req.user.userId;
     return this.seriesService.markLessonAsViewed(userId, lessonId);
+  }
+
+  @Post('lessons/:lessonId/progress')
+  @ApiOperation({ summary: 'Update video progress and auto-complete lesson if 90%+ watched' })
+  async updateVideoProgress(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+    @Body() progressData: {
+      time_spent?: number;
+      last_position?: number;
+      completion_percentage?: number;
+    },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.updateVideoProgress(userId, lessonId, progressData);
   }
 
   @Post('lessons/:lessonId/complete')

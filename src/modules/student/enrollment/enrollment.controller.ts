@@ -28,6 +28,13 @@ export class EnrollmentController {
     return this.enrollmentService.getStudentEnrollments(user_id);
   }
 
+  @Get(':id')
+  @HttpCode(HttpStatus.OK)
+  async getStudentEnrollment(@Param('id') id: string, @Req() req: any) {
+    const user_id = req.user.userId;
+    return this.enrollmentService.getStudentEnrollment(id, user_id);
+  }
+
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
   async deleteEnrollment(

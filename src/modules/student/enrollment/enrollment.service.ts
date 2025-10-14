@@ -227,33 +227,24 @@ export class EnrollmentService {
         }
     }
 
-    /**
-* Handle successful payment (called by webhook)
-*/
-    async handlePaymentSuccess(paymentIntentId: string) {
-
-        // Find enrollment by payment reference
+    async getStudentEnrollment(id: string, userId: string) {
         const enrollment = await this.prisma.enrollment.findFirst({
-            where: {
-                payment_reference_number: paymentIntentId,
+            where: { id, user_id: userId, deleted_at: null },
+            include: {
+                series: true,
+            },
+            orderBy: {
+                enrolled_at: 'desc',
             },
         });
-
         if (!enrollment) {
-            console.error('Enrollment not found for payment intent:', paymentIntentId);
-            return;
+            throw new NotFoundException('Enrollment not found');
         }
-
-        // Update enrollment status to active
-        await this.prisma.enrollment.update({
-            where: { id: enrollment.id },
-            data: {
-                status: 'ACTIVE',
-                payment_status: 'completed',
-            },
-        });
-
-        this.logger.log(`Payment completed and course progress initialized for enrollment ${enrollment.id}`);
+        return {
+            success: true,
+            message: 'Enrollment retrieved successfully',
+            data: enrollment,
+        };
     }
 
     /**

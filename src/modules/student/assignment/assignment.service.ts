@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { DateHelper } from 'src/common/helper/date.helper';
 
 @Injectable()
 export class AssignmentService {
@@ -13,6 +14,7 @@ export class AssignmentService {
     search?: string,
     series_id?: string,
     course_id?: string,
+    submission_status?: 'submitted' | 'not_submitted',
   ) {
     const skip = (page - 1) * limit;
 
@@ -65,25 +67,76 @@ export class AssignmentService {
           description: true,
           published_at: true,
           publication_status: true,
+          due_at: true,
           total_marks: true,
           created_at: true,
           updated_at: true,
           series: { select: { id: true, title: true } },
           course: { select: { id: true, title: true } },
+          submissions: {
+            where: { student_id: userId },
+            select: {
+              id: true,
+              status: true,
+              submitted_at: true,
+              total_grade: true,
+              graded_at: true,
+            },
+          },
         },
         orderBy: [{ published_at: 'desc' }, { created_at: 'desc' }],
       }),
       this.prisma.assignment.count({ where }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
+    // Process assignments to include submission status
+    let processedAssignments = assignments.map(assignment => {
+      const submission = assignment.submissions[0] || null;
+      const remainingTime = assignment.due_at ? DateHelper.getRemainingTime(assignment.due_at) : { formatted: '0 days' };
+      return {
+        ...assignment,
+        remaining_time: remainingTime.formatted,
+        submission_status: submission ? {
+          id: submission.id,
+          status: submission.status,
+          submitted_at: submission.submitted_at,
+          total_grade: submission.total_grade,
+          graded_at: submission.graded_at,
+          is_submitted: true,
+        } : {
+          is_submitted: false,
+        },
+        submissions: undefined, // Remove the submissions array as we've processed it
+      };
+    });
+
+    // Filter by submission status if provided
+    if (submission_status === 'submitted') {
+      processedAssignments = processedAssignments.filter(assignment => assignment.submission_status.is_submitted);
+    } else if (submission_status === 'not_submitted') {
+      processedAssignments = processedAssignments.filter(assignment => !assignment.submission_status.is_submitted);
+    }
+
+    // Recalculate pagination for filtered results
+    const filteredTotal = processedAssignments.length;
+    const totalPages = Math.ceil(filteredTotal / limit);
     const hasNextPage = page < totalPages;
     const hasPreviousPage = page > 1;
 
     return {
       success: true,
       message: 'Assignments retrieved successfully',
-      data: { assignments, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } },
+      data: {
+        assignments: processedAssignments,
+        pagination: {
+          total: filteredTotal,
+          page,
+          limit,
+          totalPages,
+          hasNextPage,
+          hasPreviousPage
+        }
+      },
     };
   }
 

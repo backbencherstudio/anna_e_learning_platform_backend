@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { SeriesService } from 'src/modules/admin/series/series.service';
+import { SeriesService as StudentSeriesService } from 'src/modules/student/series/series.service';
 
 const prisma = new PrismaClient();
 
@@ -168,7 +169,7 @@ export class TransactionRepository {
     });
 
     // Update enrollment status to active
-    await prisma.enrollment.update({
+    const updatedEnrollment = await prisma.enrollment.update({
       where: { id: paymentTransaction.enrollment_id },
       data: {
         status: 'ACTIVE',
@@ -179,14 +180,15 @@ export class TransactionRepository {
       },
     });
 
-    // Recalculate available seats for the series
-    const enrollment = await prisma.enrollment.findUnique({
-      where: { id: paymentTransaction.enrollment_id },
-      select: { series_id: true }
-    });
+    // Unlock first lesson after successful payment
+    if (status === 'succeeded') {
+      const studentSeriesService = new StudentSeriesService(prisma as any);
+      await studentSeriesService.unlockFirstLessonForUser(updatedEnrollment.user_id, updatedEnrollment.series_id);
+    }
 
-    if (enrollment && enrollment.series_id) {
-      await this.recalculateAvailableSites(enrollment.series_id);
+    // Recalculate available seats for the series
+    if (updatedEnrollment && updatedEnrollment.series_id) {
+      await this.recalculateAvailableSites(updatedEnrollment.series_id);
     }
 
     return await prisma.paymentTransaction.updateMany({

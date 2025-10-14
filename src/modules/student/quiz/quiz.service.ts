@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { DateHelper } from '../../../common/helper/date.helper';
 
 @Injectable()
 export class QuizService {
@@ -12,6 +13,7 @@ export class QuizService {
     search?: string,
     series_id?: string,
     course_id?: string,
+    submission_status?: 'submitted' | 'not_submitted',
   ) {
     const skip = (page - 1) * limit;
 
@@ -53,23 +55,81 @@ export class QuizService {
           instructions: true,
           total_marks: true,
           published_at: true,
+          due_at: true,
           is_published: true,
           publication_status: true,
           created_at: true,
           updated_at: true,
           series: { select: { id: true, title: true } },
           course: { select: { id: true, title: true } },
+          submissions: {
+            where: { student_id: userId },
+            select: {
+              id: true,
+              status: true,
+              submitted_at: true,
+              total_grade: true,
+              percentage: true,
+              graded_at: true,
+            },
+          },
         },
         orderBy: [{ published_at: 'desc' }, { created_at: 'desc' }],
       }),
       this.prisma.quiz.count({ where }),
     ]);
 
-    const totalPages = Math.ceil(total / limit);
+    // Process quizzes to include submission status
+    let processedQuizzes = quizzes.map(quiz => {
+      const submission = quiz.submissions[0] || null;
+      const remainingTime = quiz.due_at ? DateHelper.getRemainingTime(quiz.due_at) : { formatted: '0 days' };
+
+      return {
+        ...quiz,
+        remaining_time: remainingTime.formatted,
+        submission_status: submission ? {
+          id: submission.id,
+          status: submission.status,
+          submitted_at: submission.submitted_at,
+          total_grade: submission.total_grade,
+          percentage: submission.percentage,
+          graded_at: submission.graded_at,
+          is_submitted: true,
+        } : {
+          is_submitted: false,
+        },
+        submissions: undefined, // Remove the submissions array as we've processed it
+      };
+    });
+
+    // Filter by submission status if provided
+    if (submission_status === 'submitted') {
+      processedQuizzes = processedQuizzes.filter(quiz => quiz.submission_status.is_submitted);
+    } else if (submission_status === 'not_submitted') {
+      processedQuizzes = processedQuizzes.filter(quiz => !quiz.submission_status.is_submitted);
+    }
+
+    // Recalculate pagination for filtered results
+    const filteredTotal = processedQuizzes.length;
+    const totalPages = Math.ceil(filteredTotal / limit);
     const hasNextPage = page < totalPages;
     const hasPreviousPage = page > 1;
 
-    return { success: true, message: 'Quizzes retrieved successfully', data: { quizzes, pagination: { total, page, limit, totalPages, hasNextPage, hasPreviousPage } } };
+    return {
+      success: true,
+      message: 'Quizzes retrieved successfully',
+      data: {
+        quizzes: processedQuizzes,
+        pagination: {
+          total: filteredTotal,
+          page,
+          limit,
+          totalPages,
+          hasNextPage,
+          hasPreviousPage
+        }
+      }
+    };
   }
 
   async findOne(userId: string, id: string) {
@@ -217,13 +277,23 @@ export class QuizService {
         answers: {
           select: {
             id: true,
-            question_id: true,
-            answer_id: true,
             answer_text: true,
             is_correct: true,
             points_earned: true,
             feedback: true,
-            question: { select: { id: true, prompt: true, points: true, position: true } },
+            question: {
+              select: {
+                id: true, prompt: true, points: true, position: true,
+                answers: { select: { id: true, option: true, is_correct: true } },
+              }
+            },
+            answer: {
+              select: {
+                id: true,
+                option: true,
+                is_correct: true,
+              }
+            },
           },
           orderBy: { id: 'asc' },
         },
