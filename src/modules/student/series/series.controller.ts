@@ -139,4 +139,27 @@ export class SeriesController {
     const userId = req.user.userId;
     return this.seriesService.getAllCourseProgress(userId, seriesId);
   }
+
+  @Get('watched-lessons')
+  @ApiOperation({ summary: 'Get all watched lessons with pagination' })
+  async getAllWatchedLessons(
+    @Req() req: any,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ): Promise<SeriesResponse<{ watchedLessons: any[]; pagination: any }>> {
+    const userId = req.user.userId;
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 5;
+
+    return this.seriesService.getAllWatchedLessons(userId, pageNum, limitNum);
+  }
+
+  @Get('last-watched-lesson')
+  @ApiOperation({ summary: 'Get last watched lesson across all enrolled series' })
+  async getLastWatchedLesson(
+    @Req() req: any,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.getLastWatchedLesson(userId);
+  }
 }

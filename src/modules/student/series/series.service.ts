@@ -78,19 +78,6 @@ export class SeriesService {
                                         video_length: true,
                                         intro_video_url: true,
                                         end_video_url: true,
-                                        lesson_files: {
-                                            select: {
-                                                id: true,
-                                                title: true,
-                                                url: true,
-                                                doc: true,
-                                                kind: true,
-                                                alt: true,
-                                                position: true,
-                                                video_length: true,
-                                            },
-                                            orderBy: { position: 'asc' },
-                                        },
                                     },
                                     orderBy: { position: 'asc' },
                                 },
@@ -129,19 +116,13 @@ export class SeriesService {
             const hasNextPage = page < totalPages;
             const hasPreviousPage = page > 1;
 
-            // Add file URLs and progress data to all series
+            // Add file URLs to series
             for (const seriesItem of series) {
                 if (seriesItem.thumbnail) {
                     seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
                 }
 
-                // Calculate total lesson files count
-                const totalLessonFiles = seriesItem.courses?.reduce((total, course) => {
-                    return total + (course.lesson_files?.length || 0);
-                }, 0) || 0;
-                (seriesItem._count as any).lesson_files = totalLessonFiles;
-
-                // Add file URLs for courses and lesson files, plus progress data
+                // Add file URLs for courses
                 if (seriesItem.courses && seriesItem.courses.length > 0) {
                     for (const course of seriesItem.courses) {
                         if (course.intro_video_url) {
@@ -150,76 +131,43 @@ export class SeriesService {
                         if (course.end_video_url) {
                             course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
                         }
-
                     }
                 }
             }
 
-            // Optimize: Get all course and lesson progress in batch queries
-            const allCourseIds = series.flatMap(s => s.courses?.map(c => c.id) || []);
-            const allLessonIds = series.flatMap(s =>
-                s.courses?.flatMap(c => c.lesson_files?.map(l => l.id) || []) || []
-            );
-
-            // Get all course progress in one query
-            const allCourseProgress = await this.prisma.courseProgress.findMany({
+            // Get lesson files count for each series
+            const allSeriesIds = series.map(s => s.id);
+            const lessonCounts = await this.prisma.lessonFile.groupBy({
+                by: ['course_id'],
                 where: {
-                    user_id: userId,
-                    course_id: { in: allCourseIds },
+                    course: {
+                        series_id: { in: allSeriesIds },
+                        deleted_at: null,
+                    },
                     deleted_at: null,
+                    kind: 'video',
                 },
-                select: {
-                    course_id: true,
+                _count: {
                     id: true,
-                    status: true,
-                    completion_percentage: true,
-                    is_completed: true,
-                    started_at: true,
-                    completed_at: true,
                 },
             });
 
-            // Get all lesson progress in one query
-            const allLessonProgress = await this.prisma.lessonProgress.findMany({
-                where: {
-                    user_id: userId,
-                    lesson_id: { in: allLessonIds },
-                    deleted_at: null,
-                },
-                select: {
-                    lesson_id: true,
-                    id: true,
-                    is_completed: true,
-                    is_viewed: true,
-                    completed_at: true,
-                    viewed_at: true,
-                    time_spent: true,
-                    last_position: true,
-                    completion_percentage: true,
-                },
-            });
-
-            // Create lookup maps for efficient access
-            const courseProgressMap = new Map(allCourseProgress.map(cp => [cp.course_id, cp]));
-            const lessonProgressMap = new Map(allLessonProgress.map(lp => [lp.lesson_id, lp]));
-
-            // Add course and lesson progress for each series
+            // Get course IDs for each series to map lesson counts
+            const seriesCourseMap = new Map();
             for (const seriesItem of series) {
-                if (seriesItem.courses && seriesItem.courses.length > 0) {
-                    for (const course of seriesItem.courses) {
-                        // Add course progress from map
-                        course['course_progress'] = courseProgressMap.get(course.id) || null;
-
-                        // Add lesson progress for each lesson
-                        if (course.lesson_files && course.lesson_files.length > 0) {
-                            for (const lessonFile of course.lesson_files) {
-                                const lessonProgress = lessonProgressMap.get(lessonFile.id);
-                                lessonFile['lesson_progress'] = lessonProgress || null;
-                                lessonFile['is_unlocked'] = lessonProgress ? true : false;
-                            }
-                        }
-                    }
+                if (seriesItem.courses) {
+                    seriesCourseMap.set(seriesItem.id, seriesItem.courses.map(c => c.id));
                 }
+            }
+
+            // Add lesson files count to each series
+            for (const seriesItem of series) {
+                const seriesCourseIds = seriesCourseMap.get(seriesItem.id) || [];
+                const totalLessonFiles = lessonCounts
+                    .filter(lc => seriesCourseIds.includes(lc.course_id))
+                    .reduce((total, lc) => total + lc._count.id, 0);
+
+                (seriesItem._count as any).lesson_files = totalLessonFiles;
             }
 
             return {
@@ -1603,15 +1551,17 @@ export class SeriesService {
                 where: {
                     user_id: userId,
                     lesson_id: lessonId,
-                    is_viewed: false,
+                    deleted_at: null,
                 },
             });
             if (!isViewed) {
                 return {
                     success: false,
-                    message: 'you can not view this lesson',
+                    message: 'You can not view this lesson',
                 };
             }
+
+            this.markLessonAsViewed(userId, lessonId);
 
             // First check if user is enrolled in the series that contains this lesson
             const enrollment = await this.prisma.enrollment.findFirst({
@@ -1846,6 +1796,334 @@ export class SeriesService {
             return {
                 success: false,
                 message: 'Failed to fetch course progress',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Get all watched lessons for a user across all enrolled series
+     */
+    async getAllWatchedLessons(userId: string, page: number = 1, limit: number = 10): Promise<SeriesResponse<{ watchedLessons: any[]; pagination: any }>> {
+        try {
+            this.logger.log(`Fetching all watched lessons for user: ${userId}`);
+
+            const skip = (page - 1) * limit;
+
+            // Get all watched lessons with pagination
+            const [watchedLessons, total] = await Promise.all([
+                this.prisma.lessonProgress.findMany({
+                    where: {
+                        user_id: userId,
+                        is_viewed: true,
+                        viewed_at: { not: null },
+                        deleted_at: null,
+                    },
+                    orderBy: {
+                        viewed_at: 'desc',
+                    },
+                    skip,
+                    take: limit,
+                    include: {
+                        lesson: {
+                            select: {
+                                id: true,
+                                title: true,
+                                url: true,
+                                doc: true,
+                                kind: true,
+                                alt: true,
+                                position: true,
+                                video_length: true,
+                                course: {
+                                    select: {
+                                        id: true,
+                                        title: true,
+                                        position: true,
+                                        series: {
+                                            select: {
+                                                id: true,
+                                                title: true,
+                                                slug: true,
+                                                thumbnail: true,
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                }),
+                this.prisma.lessonProgress.count({
+                    where: {
+                        user_id: userId,
+                        is_viewed: true,
+                        viewed_at: { not: null },
+                        deleted_at: null,
+                    },
+                }),
+            ]);
+
+            if (!watchedLessons.length) {
+                return {
+                    success: false,
+                    message: 'No watched lessons found',
+                    data: {
+                        watchedLessons: [],
+                        pagination: {
+                            total: 0,
+                            page,
+                            limit,
+                            totalPages: 0,
+                            hasNextPage: false,
+                            hasPreviousPage: false,
+                        },
+                    },
+                };
+            }
+
+            // Get unique series IDs from watched lessons
+            const seriesIds = [...new Set(watchedLessons.map(wl => wl.lesson.course.series.id))];
+
+            // Get all enrollments for these series
+            const enrollments = await this.prisma.enrollment.findMany({
+                where: {
+                    user_id: userId,
+                    series_id: { in: seriesIds },
+                    status: { in: ['ACTIVE', 'COMPLETED'] as any },
+                    payment_status: 'completed',
+                    deleted_at: null,
+                },
+                select: {
+                    id: true,
+                    series_id: true,
+                    enrolled_at: true,
+                    status: true,
+                    progress_percentage: true,
+                    last_accessed_at: true,
+                },
+            });
+
+            // Create enrollment lookup map
+            const enrollmentMap = new Map(enrollments.map(enrollment => [enrollment.series_id, enrollment]));
+
+            // Process watched lessons data
+            const processedWatchedLessons = watchedLessons.map(watchedLesson => {
+                const lesson = watchedLesson.lesson;
+                const course = lesson.course;
+                const series = course.series;
+                const enrollment = enrollmentMap.get(series.id);
+
+                // Skip lessons from series where user is no longer enrolled
+                if (!enrollment) {
+                    return null;
+                }
+
+                return {
+                    lesson: {
+                        id: lesson.id,
+                        title: lesson.title,
+                        position: lesson.position,
+                        video_length: lesson.video_length,
+                        file_url: lesson.url ? SojebStorage.url(appConfig().storageUrl.lesson_file + lesson.url) : null,
+                        doc_url: lesson.doc ? SojebStorage.url(appConfig().storageUrl.doc_file + lesson.doc) : null,
+                    },
+                    course: {
+                        id: course.id,
+                        title: course.title,
+                        position: course.position,
+                    },
+                    series: {
+                        id: series.id,
+                        title: series.title,
+                        slug: series.slug,
+                        thumbnail: series.thumbnail ? SojebStorage.url(appConfig().storageUrl.series_thumbnail + series.thumbnail) : null,
+                    },
+                    enrollment: {
+                        id: enrollment.id,
+                        enrolled_at: enrollment.enrolled_at,
+                        status: enrollment.status,
+                        progress_percentage: enrollment.progress_percentage,
+                        last_accessed_at: enrollment.last_accessed_at,
+                    },
+                    progress: {
+                        id: watchedLesson.id,
+                        is_completed: watchedLesson.is_completed,
+                        is_viewed: watchedLesson.is_viewed,
+                        completed_at: watchedLesson.completed_at,
+                        viewed_at: watchedLesson.viewed_at,
+                        time_spent: watchedLesson.time_spent,
+                        last_position: watchedLesson.last_position,
+                        completion_percentage: watchedLesson.completion_percentage,
+                    },
+                };
+            }).filter(Boolean); // Remove null entries
+
+            // Calculate pagination values
+            const totalPages = Math.ceil(total / limit);
+            const hasNextPage = page < totalPages;
+            const hasPreviousPage = page > 1;
+
+            return {
+                success: true,
+                message: 'All watched lessons retrieved successfully',
+                data: {
+                    watchedLessons: processedWatchedLessons,
+                    pagination: {
+                        total,
+                        page,
+                        limit,
+                        totalPages,
+                        hasNextPage,
+                        hasPreviousPage,
+                    },
+                },
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching all watched lessons: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to fetch watched lessons',
+                error: error.message,
+            };
+        }
+    }
+
+    /**
+     * Get last watched lesson for a user across all enrolled series
+     */
+    async getLastWatchedLesson(userId: string): Promise<SeriesResponse<any>> {
+        try {
+            this.logger.log(`Fetching last watched lesson for user: ${userId}`);
+
+            // Get the most recently viewed lesson
+            const lastWatchedLesson = await this.prisma.lessonProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    is_viewed: true,
+                    viewed_at: { not: null },
+                    deleted_at: null,
+                },
+                orderBy: {
+                    viewed_at: 'desc',
+                },
+                include: {
+                    lesson: {
+                        select: {
+                            id: true,
+                            title: true,
+                            url: true,
+                            doc: true,
+                            kind: true,
+                            alt: true,
+                            position: true,
+                            video_length: true,
+                            course: {
+                                select: {
+                                    id: true,
+                                    title: true,
+                                    position: true,
+                                    series: {
+                                        select: {
+                                            id: true,
+                                            title: true,
+                                            slug: true,
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            });
+
+            if (!lastWatchedLesson || !lastWatchedLesson.lesson) {
+                return {
+                    success: false,
+                    message: 'No watched lessons found',
+                    data: null,
+                };
+            }
+
+            const lesson = lastWatchedLesson.lesson;
+            const course = lesson.course;
+            const series = course.series;
+
+            // Check if user is still enrolled in this series
+            const enrollment = await this.prisma.enrollment.findFirst({
+                where: {
+                    user_id: userId,
+                    series_id: series.id,
+                    status: { in: ['ACTIVE', 'COMPLETED'] as any },
+                    payment_status: 'completed',
+                    deleted_at: null,
+                },
+                select: {
+                    id: true,
+                    enrolled_at: true,
+                    status: true,
+                    progress_percentage: true,
+                    last_accessed_at: true,
+                },
+            });
+
+            if (!enrollment) {
+                return {
+                    success: false,
+                    message: 'You are no longer enrolled in this series',
+                    data: null,
+                };
+            }
+
+            // Prepare response data
+            const lastWatchedData = {
+                lesson: {
+                    id: lesson.id,
+                    title: lesson.title,
+                    position: lesson.position,
+                    video_length: lesson.video_length,
+                    file_url: lesson.url ? SojebStorage.url(appConfig().storageUrl.lesson_file + lesson.url) : null,
+                    doc_url: lesson.doc ? SojebStorage.url(appConfig().storageUrl.doc_file + lesson.doc) : null,
+                },
+                course: {
+                    id: course.id,
+                    title: course.title,
+                    position: course.position,
+                },
+                series: {
+                    id: series.id,
+                    title: series.title,
+                    slug: series.slug,
+                },
+                enrollment: {
+                    id: enrollment.id,
+                    enrolled_at: enrollment.enrolled_at,
+                    status: enrollment.status,
+                    progress_percentage: enrollment.progress_percentage,
+                    last_accessed_at: enrollment.last_accessed_at,
+                },
+                progress: {
+                    id: lastWatchedLesson.id,
+                    is_completed: lastWatchedLesson.is_completed,
+                    is_viewed: lastWatchedLesson.is_viewed,
+                    completed_at: lastWatchedLesson.completed_at,
+                    viewed_at: lastWatchedLesson.viewed_at,
+                    time_spent: lastWatchedLesson.time_spent,
+                    last_position: lastWatchedLesson.last_position,
+                    completion_percentage: lastWatchedLesson.completion_percentage,
+                },
+            };
+
+            return {
+                success: true,
+                message: 'Last watched lesson retrieved successfully',
+                data: lastWatchedData,
+            };
+        } catch (error) {
+            this.logger.error(`Error fetching last watched lesson: ${error.message}`, error.stack);
+            return {
+                success: false,
+                message: 'Failed to fetch last watched lesson',
                 error: error.message,
             };
         }
