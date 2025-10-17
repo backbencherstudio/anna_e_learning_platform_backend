@@ -78,6 +78,18 @@ export class SeriesService {
                                         video_length: true,
                                         intro_video_url: true,
                                         end_video_url: true,
+                                        lesson_files: {
+                                            select: {
+                                                id: true,
+                                                title: true,
+                                                url: true,
+                                                doc: true,
+                                                kind: true,
+                                                video_length: true,
+                                                position: true,
+                                            },
+                                            orderBy: { position: 'asc' },
+                                        },
                                     },
                                     orderBy: { position: 'asc' },
                                 },
@@ -130,6 +142,50 @@ export class SeriesService {
                         }
                         if (course.end_video_url) {
                             course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+                        }
+                    }
+                }
+            }
+
+            // Get all lesson progress for all series to determine lock/unlock status
+            const allLessonIds = series.flatMap(s =>
+                s.courses?.flatMap(c => c.lesson_files?.map(l => l.id) || []) || []
+            );
+
+            if (allLessonIds.length > 0) {
+                const allLessonProgress = await this.prisma.lessonProgress.findMany({
+                    where: {
+                        user_id: userId,
+                        lesson_id: { in: allLessonIds },
+                        deleted_at: null,
+                    },
+                    select: {
+                        lesson_id: true,
+                        id: true,
+                        is_completed: true,
+                        is_viewed: true,
+                        completed_at: true,
+                        viewed_at: true,
+                        time_spent: true,
+                        last_position: true,
+                        completion_percentage: true,
+                    },
+                });
+
+                // Create lookup map for efficient access
+                const lessonProgressMap = new Map(allLessonProgress.map(lp => [lp.lesson_id, lp]));
+
+                // Add lesson progress and lock/unlock status to each lesson
+                for (const seriesItem of series) {
+                    if (seriesItem.courses && seriesItem.courses.length > 0) {
+                        for (const course of seriesItem.courses) {
+                            if (course.lesson_files && course.lesson_files.length > 0) {
+                                for (const lessonFile of course.lesson_files) {
+                                    const lessonProgress = lessonProgressMap.get(lessonFile.id);
+                                    lessonFile['lesson_progress'] = lessonProgress || null;
+                                    lessonFile['is_unlocked'] = lessonProgress ? true : false;
+                                }
+                            }
                         }
                     }
                 }

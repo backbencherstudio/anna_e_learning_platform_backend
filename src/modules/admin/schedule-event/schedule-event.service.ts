@@ -212,32 +212,61 @@ export class ScheduleEventService {
                 where.series_id = seriesId;
             }
 
-            const skip = (page - 1) * limit;
-
-            const [events, total] = await Promise.all([
-                this.prisma.scheduleEvent.findMany({
-                    where,
-                    orderBy: { start_at: "asc" },
-                    skip,
-                    take: limit,
-                    include: {
-                        user: {
-                            select: {
-                                id: true,
-                                username: true,
-                                email: true,
-                                first_name: true,
-                                last_name: true,
-                            }
-                        },
-                        assignment: { select: { id: true, title: true } },
-                        quiz: { select: { id: true, title: true } },
-                        course: { select: { id: true, title: true } },
-                        series: { select: { id: true, title: true } },
+            // Get all events first to group them
+            const allEvents = await this.prisma.scheduleEvent.findMany({
+                where,
+                orderBy: { start_at: "asc" },
+                include: {
+                    user: {
+                        select: {
+                            id: true,
+                            username: true,
+                            email: true,
+                            first_name: true,
+                            last_name: true,
+                        }
                     },
-                }),
-                this.prisma.scheduleEvent.count({ where }),
-            ]);
+                    assignment: { select: { id: true, title: true } },
+                    quiz: { select: { id: true, title: true } },
+                    course: { select: { id: true, title: true } },
+                    series: { select: { id: true, title: true } },
+                },
+            });
+
+            // Group events by unique combination of title, start_at, end_at, and other key fields
+            const groupedEvents = new Map();
+
+            allEvents.forEach(event => {
+                // Create a unique key based on event details (excluding user_id)
+                const key = `${event.title}-${event.start_at.toISOString()}-${event.end_at.toISOString()}-${event.type}-${event.assignment_id || 'null'}-${event.quiz_id || 'null'}-${event.course_id || 'null'}-${event.series_id || 'null'}`;
+
+                if (!groupedEvents.has(key)) {
+                    // Create a representative event (use the first one found)
+                    const representativeEvent = {
+                        ...event,
+                        // Remove user-specific data from the main event
+                        user: null,
+                        user_id: null,
+                        // Add student count and list
+                        student_count: 0,
+                        students: []
+                    };
+                    groupedEvents.set(key, representativeEvent);
+                }
+
+                // Add user to the students list and increment count
+                const groupedEvent = groupedEvents.get(key);
+                if (event.user) {
+                    groupedEvent.students.push(event.user);
+                    groupedEvent.student_count++;
+                }
+            });
+
+            // Convert map to array and apply pagination
+            const uniqueEvents = Array.from(groupedEvents.values());
+            const total = uniqueEvents.length;
+            const skip = (page - 1) * limit;
+            const paginatedEvents = uniqueEvents.slice(skip, skip + limit);
 
             const totalPages = Math.ceil(total / limit);
             const hasNextPage = page < totalPages;
@@ -247,7 +276,7 @@ export class ScheduleEventService {
                 success: true,
                 message: "Schedule events fetched",
                 data: {
-                    events,
+                    events: paginatedEvents,
                     pagination: {
                         total,
                         page,

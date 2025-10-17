@@ -1,7 +1,13 @@
 import { IsOptional, IsString, IsUUID } from 'class-validator';
 
 export class CreateFeedbackDto {
+
     @IsString()
+    @IsOptional()
+    series_id: string;
+
+    @IsString()
+    @IsOptional()
     course_id: string;
 
     @IsOptional()
