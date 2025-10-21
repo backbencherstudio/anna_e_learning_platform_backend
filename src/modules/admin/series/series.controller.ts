@@ -29,47 +29,6 @@ export class SeriesController {
   @UseInterceptors(
     FileFieldsInterceptor([
       { name: 'thumbnail', maxCount: 1 },
-      // Support up to 10 courses with their files
-      { name: 'course_0_introVideo', maxCount: 1 },
-      { name: 'course_0_endVideo', maxCount: 1 },
-      { name: 'course_0_videoFiles', maxCount: 50 },
-      { name: 'course_0_docFiles', maxCount: 50 },
-      { name: 'course_1_introVideo', maxCount: 1 },
-      { name: 'course_1_endVideo', maxCount: 1 },
-      { name: 'course_1_videoFiles', maxCount: 50 },
-      { name: 'course_1_docFiles', maxCount: 50 },
-      { name: 'course_2_introVideo', maxCount: 1 },
-      { name: 'course_2_endVideo', maxCount: 1 },
-      { name: 'course_2_videoFiles', maxCount: 50 },
-      { name: 'course_2_docFiles', maxCount: 50 },
-      { name: 'course_3_introVideo', maxCount: 1 },
-      { name: 'course_3_endVideo', maxCount: 1 },
-      { name: 'course_3_videoFiles', maxCount: 50 },
-      { name: 'course_3_docFiles', maxCount: 50 },
-      { name: 'course_4_introVideo', maxCount: 1 },
-      { name: 'course_4_endVideo', maxCount: 1 },
-      { name: 'course_4_videoFiles', maxCount: 50 },
-      { name: 'course_4_docFiles', maxCount: 50 },
-      { name: 'course_5_introVideo', maxCount: 1 },
-      { name: 'course_5_endVideo', maxCount: 1 },
-      { name: 'course_5_videoFiles', maxCount: 50 },
-      { name: 'course_5_docFiles', maxCount: 50 },
-      { name: 'course_6_introVideo', maxCount: 1 },
-      { name: 'course_6_endVideo', maxCount: 1 },
-      { name: 'course_6_videoFiles', maxCount: 50 },
-      { name: 'course_6_docFiles', maxCount: 50 },
-      { name: 'course_7_introVideo', maxCount: 1 },
-      { name: 'course_7_endVideo', maxCount: 1 },
-      { name: 'course_7_videoFiles', maxCount: 50 },
-      { name: 'course_7_docFiles', maxCount: 50 },
-      { name: 'course_8_introVideo', maxCount: 1 },
-      { name: 'course_8_endVideo', maxCount: 1 },
-      { name: 'course_8_videoFiles', maxCount: 50 },
-      { name: 'course_8_docFiles', maxCount: 50 },
-      { name: 'course_9_introVideo', maxCount: 1 },
-      { name: 'course_9_endVideo', maxCount: 1 },
-      { name: 'course_9_videoFiles', maxCount: 50 },
-      { name: 'course_9_docFiles', maxCount: 50 },
     ], multerConfig)
   )
   async create(
@@ -77,52 +36,11 @@ export class SeriesController {
     @UploadedFiles()
     files: {
       thumbnail?: Express.Multer.File[];
-      course_0_introVideo?: Express.Multer.File[];
-      course_0_endVideo?: Express.Multer.File[];
-      course_0_videoFiles?: Express.Multer.File[];
-      course_0_docFiles?: Express.Multer.File[];
-      course_1_introVideo?: Express.Multer.File[];
-      course_1_endVideo?: Express.Multer.File[];
-      course_1_videoFiles?: Express.Multer.File[];
-      course_1_docFiles?: Express.Multer.File[];
-      course_2_introVideo?: Express.Multer.File[];
-      course_2_endVideo?: Express.Multer.File[];
-      course_2_videoFiles?: Express.Multer.File[];
-      course_2_docFiles?: Express.Multer.File[];
-      course_3_introVideo?: Express.Multer.File[];
-      course_3_endVideo?: Express.Multer.File[];
-      course_3_videoFiles?: Express.Multer.File[];
-      course_3_docFiles?: Express.Multer.File[];
-      course_4_introVideo?: Express.Multer.File[];
-      course_4_endVideo?: Express.Multer.File[];
-      course_4_videoFiles?: Express.Multer.File[];
-      course_4_docFiles?: Express.Multer.File[];
-      course_5_introVideo?: Express.Multer.File[];
-      course_5_endVideo?: Express.Multer.File[];
-      course_5_videoFiles?: Express.Multer.File[];
-      course_5_docFiles?: Express.Multer.File[];
-      course_6_introVideo?: Express.Multer.File[];
-      course_6_endVideo?: Express.Multer.File[];
-      course_6_videoFiles?: Express.Multer.File[];
-      course_6_docFiles?: Express.Multer.File[];
-      course_7_introVideo?: Express.Multer.File[];
-      course_7_endVideo?: Express.Multer.File[];
-      course_7_videoFiles?: Express.Multer.File[];
-      course_7_docFiles?: Express.Multer.File[];
-      course_8_introVideo?: Express.Multer.File[];
-      course_8_endVideo?: Express.Multer.File[];
-      course_8_videoFiles?: Express.Multer.File[];
-      course_8_docFiles?: Express.Multer.File[];
-      course_9_introVideo?: Express.Multer.File[];
-      course_9_endVideo?: Express.Multer.File[];
-      course_9_videoFiles?: Express.Multer.File[];
-      course_9_docFiles?: Express.Multer.File[];
     },
     @Req() req: any
   ) {
     const thumbnail = files.thumbnail?.[0] || null;
-    const courseFiles = this.parseCourseFilesFromFiles(files, createSeriesDto.courses?.length || 0);
-    return this.seriesService.create(createSeriesDto, thumbnail, courseFiles);
+    return this.seriesService.create(createSeriesDto, thumbnail);
   }
 
 
@@ -132,8 +50,6 @@ export class SeriesController {
     FileFieldsInterceptor([
       { name: 'introVideo', maxCount: 1 },
       { name: 'endVideo', maxCount: 1 },
-      { name: 'videoFiles', maxCount: 50 },
-      { name: 'docFiles', maxCount: 50 },
     ], multerConfig)
   )
   async createCourse(
@@ -141,20 +57,14 @@ export class SeriesController {
     @UploadedFiles() files: {
       introVideo?: Express.Multer.File[];
       endVideo?: Express.Multer.File[];
-      videoFiles?: Express.Multer.File[];
-      docFiles?: Express.Multer.File[];
     }
   ) {
     const introVideo = files.introVideo?.[0];
     const endVideo = files.endVideo?.[0];
-    const videoFiles = files.videoFiles || [];
-    const docFiles = files.docFiles || [];
 
     return this.seriesService.createCourse(createCourseDto, {
       introVideo,
       endVideo,
-      videoFiles,
-      docFiles,
     });
   }
 
@@ -341,7 +251,6 @@ export class SeriesController {
     @Param('lessonId') lessonId: string,
     @Body() updateData: {
       title?: string;
-      position?: number;
       alt?: string;
     },
     @UploadedFiles() files: {
@@ -358,34 +267,5 @@ export class SeriesController {
   @HttpCode(HttpStatus.OK)
   async remove(@Param('id') id: string) {
     return this.seriesService.remove(id);
-  }
-
-  /**
-   * Parse module files from uploaded files
-   * Supports up to 10 modules with intro videos, end videos, and lesson files
-   */
-  private parseCourseFilesFromFiles(files: any, courseCount: number) {
-    const courseFiles = [];
-
-    // Parse files for each course
-    for (let i = 0; i < courseCount && i < 10; i++) {
-      const introVideo = files[`course_${i}_introVideo`] ? files[`course_${i}_introVideo`][0] : null;
-      const endVideo = files[`course_${i}_endVideo`] ? files[`course_${i}_endVideo`][0] : null;
-      const videoFiles = files[`course_${i}_videoFiles`] || [];
-      const docFiles = files[`course_${i}_docFiles`] || [];
-
-      // Only add course if it has any files
-      if (introVideo || endVideo || (videoFiles && videoFiles.length > 0) || (docFiles && docFiles.length > 0)) {
-        courseFiles.push({
-          courseIndex: i,
-          introVideo,
-          endVideo,
-          videoFiles: videoFiles,
-          docFiles: docFiles,
-        });
-      }
-    }
-
-    return courseFiles;
   }
 }

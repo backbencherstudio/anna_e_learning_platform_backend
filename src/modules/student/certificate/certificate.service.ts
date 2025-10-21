@@ -28,7 +28,6 @@ export class CertificateService {
                                 select: {
                                     id: true,
                                     title: true,
-                                    position: true,
                                     created_at: true,
                                     course_progress: {
                                         where: {
@@ -48,7 +47,7 @@ export class CertificateService {
                                     }
                                 },
                                 orderBy: {
-                                    position: 'asc'
+                                    created_at: 'asc'
                                 }
                             }
                         }
@@ -71,7 +70,6 @@ export class CertificateService {
                     return {
                         course_id: course.id,
                         course_title: course.title,
-                        course_position: course.position,
                         course_start_date: course.created_at,
                         course_completion_date: courseProgress?.completed_at || null,
                         course_status: courseProgress?.status || 'pending',
@@ -269,7 +267,6 @@ export class CertificateService {
                         select: {
                             id: true,
                             title: true,
-                            position: true,
                             course_progress: {
                                 where: {
                                     user_id: userId,
@@ -285,7 +282,7 @@ export class CertificateService {
                             }
                         },
                         orderBy: {
-                            position: 'asc'
+                            created_at: 'asc'
                         }
                     }
                 }
@@ -318,7 +315,6 @@ export class CertificateService {
             const completedCoursesData = series.courses.map(course => ({
                 course_id: course.id,
                 course_title: course.title,
-                position: course.position,
                 completion_date: course.course_progress[0]?.completed_at,
                 completion_percentage: course.course_progress[0]?.completion_percentage || 0
             }));

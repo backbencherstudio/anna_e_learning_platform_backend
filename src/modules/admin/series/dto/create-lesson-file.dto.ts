@@ -26,11 +26,6 @@ export class CreateLessonFileDto {
     @MaxLength(200)
     alt?: string;
 
-    @IsOptional()
-    @Type(() => Number)
-    @IsInt()
-    @Min(0)
-    position?: number;
 
     @IsOptional()
     @IsString()

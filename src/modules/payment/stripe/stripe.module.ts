@@ -2,12 +2,12 @@ import { Module } from '@nestjs/common';
 import { StripeService } from './stripe.service';
 import { StripeController } from './stripe.controller';
 import { EnrollmentService } from '../../student/enrollment/enrollment.service';
-import { SeriesService } from '../../student/series/series.service';
+import { SeriesModule } from '../../student/series/series.module';
 import { PrismaModule } from '../../../prisma/prisma.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, SeriesModule],
   controllers: [StripeController],
-  providers: [StripeService, EnrollmentService, SeriesService],
+  providers: [StripeService, EnrollmentService],
 })
 export class StripeModule { }

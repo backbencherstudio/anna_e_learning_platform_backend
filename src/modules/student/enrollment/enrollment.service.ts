@@ -3,7 +3,7 @@ import { CreateEnrollmentDto } from './dto/create-enrollment.dto';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { StripePayment } from '../../../common/lib/Payment/stripe/StripePayment';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
-import { SeriesService } from '../series/series.service';
+import { SeriesService } from '../series/series.service.refactored';
 import { EnrollType } from '@prisma/client';
 
 
@@ -83,14 +83,6 @@ export class EnrollmentService {
                 reference_number: paymentIntent.id,
                 status: 'pending',
             });
-
-            // decrise available site
-            //  await this.prisma.series.update({ where: { id: checkout.series_id }, data: { available_site: series.available_site - 1 } });
-
-            await this.prisma.user.update({ where: { id: user.id }, data: { type: 'student' } });
-
-            // Initialize course progress and unlock first lesson
-            await this.seriesService.unlockFirstLessonForUser(enrollment.user_id, enrollment.series_id);
 
             await this.prisma.checkout.delete({ where: { id: checkout_id } });
 

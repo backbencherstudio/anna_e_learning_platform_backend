@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
-import { SeriesService } from './series.service';
+import { SeriesService } from './series.service.refactored';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { SeriesResponse } from './interfaces/series-response.interface';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -161,5 +161,166 @@ export class SeriesController {
   ): Promise<SeriesResponse<any>> {
     const userId = req.user.userId;
     return this.seriesService.getLastWatchedLesson(userId);
+  }
+
+  // ==================== VIDEO PROGRESS ENDPOINTS ====================
+
+  @Post('courses/:courseId/intro-video/progress')
+  @ApiOperation({ summary: 'Update intro video progress, unlock first lesson at 90%, and auto-complete at 100%' })
+  async updateIntroVideoProgress(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+    @Body() progressData: {
+      time_spent?: number;
+      last_position?: number;
+      completion_percentage?: number;
+    },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.updateIntroVideoProgress(userId, courseId, progressData);
+  }
+
+  @Post('courses/:courseId/end-video/progress')
+  @ApiOperation({ summary: 'Update end video progress and auto-complete if 100% watched' })
+  async updateEndVideoProgress(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+    @Body() progressData: {
+      time_spent?: number;
+      last_position?: number;
+      completion_percentage?: number;
+    },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.updateEndVideoProgress(userId, courseId, progressData);
+  }
+
+  @Post('courses/:courseId/intro-video/complete')
+  @ApiOperation({ summary: 'Mark intro video as completed and unlock first lesson' })
+  async markIntroVideoAsCompleted(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+    @Body() completionData?: {
+      time_spent?: number;
+      last_position?: number;
+      completion_percentage?: number;
+    },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.markIntroVideoAsCompleted(userId, courseId, completionData);
+  }
+
+  @Post('courses/:courseId/end-video/complete')
+  @ApiOperation({ summary: 'Mark end video as completed and unlock next lesson' })
+  async markEndVideoAsCompleted(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+    @Body() completionData?: {
+      time_spent?: number;
+      last_position?: number;
+      completion_percentage?: number;
+    },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    return this.seriesService.markEndVideoAsCompleted(userId, courseId, completionData);
+  }
+
+  // ==================== LESSON UNLOCK ENDPOINTS ====================
+
+  @Post('series/:seriesId/unlock-first-lesson')
+  @ApiOperation({ summary: 'Unlock first lesson for a series (for enrollment)' })
+  async unlockFirstLessonForUser(
+    @Req() req: any,
+    @Param('seriesId') seriesId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    await this.seriesService.unlockFirstLessonForUser(userId, seriesId);
+    return {
+      success: true,
+      message: 'First lesson unlocked successfully',
+      data: { seriesId },
+    };
+  }
+
+  @Post('lessons/:lessonId/unlock-next')
+  @ApiOperation({ summary: 'Unlock next lesson after completing current one' })
+  async unlockNextLesson(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+    @Body() body: { courseId: string },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    await this.seriesService.unlockNextLesson(userId, lessonId, body.courseId);
+    return {
+      success: true,
+      message: 'Next lesson unlocked successfully',
+      data: { lessonId, courseId: body.courseId },
+    };
+  }
+
+  @Post('courses/:courseId/start-next-course')
+  @ApiOperation({ summary: 'Start next course after completing current one' })
+  async startNextCourse(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+    @Body() body: { seriesId: string },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    await this.seriesService.startNextCourse(userId, courseId, body.seriesId);
+    return {
+      success: true,
+      message: 'Next course started successfully',
+      data: { courseId, seriesId: body.seriesId },
+    };
+  }
+
+  // ==================== COURSE PROGRESS ENDPOINTS ====================
+
+  @Post('courses/:courseId/update-progress')
+  @ApiOperation({ summary: 'Update course progress based on completed lessons' })
+  async updateCourseProgress(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+    @Body() body: { seriesId: string },
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    await this.seriesService.updateCourseProgress(userId, courseId, body.seriesId);
+    return {
+      success: true,
+      message: 'Course progress updated successfully',
+      data: { courseId, seriesId: body.seriesId },
+    };
+  }
+
+  @Post('series/:seriesId/update-enrollment-progress')
+  @ApiOperation({ summary: 'Update enrollment progress percentage' })
+  async updateEnrollmentProgress(
+    @Req() req: any,
+    @Param('seriesId') seriesId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    await this.seriesService.updateEnrollmentProgress(userId, seriesId);
+    return {
+      success: true,
+      message: 'Enrollment progress updated successfully',
+      data: { seriesId },
+    };
+  }
+
+  // ==================== UTILITY ENDPOINTS ====================
+
+  @Get('courses/:courseId/lesson-progress')
+  @ApiOperation({ summary: 'Get lesson progress for a specific course' })
+  async getLessonProgressForCourse(
+    @Req() req: any,
+    @Param('courseId') courseId: string,
+  ): Promise<SeriesResponse<any>> {
+    const userId = req.user.userId;
+    const progress = await this.seriesService.getLessonProgressForCourse(userId, courseId);
+    return {
+      success: true,
+      message: 'Lesson progress retrieved successfully',
+      data: progress,
+    };
   }
 }

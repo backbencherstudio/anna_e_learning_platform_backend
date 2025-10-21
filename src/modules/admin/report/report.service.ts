@@ -841,7 +841,6 @@ export class ReportService {
                     select: {
                         id: true,
                         title: true,
-                        position: true,
                         course_progress: {
                             select: {
                                 id: true,
@@ -859,7 +858,7 @@ export class ReportService {
                         },
                     },
                     orderBy: {
-                        position: 'asc',
+                        created_at: 'asc',
                     },
                 },
             },
@@ -887,7 +886,6 @@ export class ReportService {
                 return {
                     course_id: course.id,
                     course_title: course.title,
-                    position: course.position,
                     total_lesson_files: course._count.lesson_files,
                     total_progress_records: totalProgressRecords,
                     completed_courses: completedCourses,
@@ -961,7 +959,6 @@ export class ReportService {
                     select: {
                         id: true,
                         title: true,
-                        position: true,
                         course_progress: {
                             select: {
                                 id: true,
@@ -979,7 +976,7 @@ export class ReportService {
                         },
                     },
                     orderBy: {
-                        position: 'asc',
+                        created_at: 'asc',
                     },
                 },
             },
@@ -1008,7 +1005,6 @@ export class ReportService {
                 return {
                     course_id: course.id,
                     course_title: course.title,
-                    position: course.position,
                     total_lesson_files: course._count.lesson_files,
                     total_progress_records: totalProgressRecords,
                     completed_courses: completedCourses,

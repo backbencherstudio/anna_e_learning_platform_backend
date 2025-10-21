@@ -78,7 +78,7 @@ export class CheckoutService {
                                 title: true,
                                 price: true,
                             },
-                            orderBy: { position: 'asc' },
+                            orderBy: { created_at: 'asc' },
                         },
                     },
                     orderBy: { created_at: 'desc' },
