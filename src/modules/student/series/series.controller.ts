@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res, Headers } from '@nestjs/common';
 import { SeriesService } from './series.service.refactored';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { SeriesResponse } from './interfaces/series-response.interface';
@@ -67,6 +67,18 @@ export class SeriesController {
   ): Promise<SeriesResponse<any>> {
     const userId = req.user.userId;
     return this.seriesService.findOneLesson(userId, lessonId);
+  }
+
+  @Get('lessons/:lessonId/stream')
+  @ApiOperation({ summary: 'Stream lesson video' })
+  async streamLessonVideo(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+    @Res() res: any,
+    @Headers('range') range?: string,
+  ) {
+    const userId = req.user.userId;
+    return this.seriesService.streamLessonVideo(userId, lessonId, res, range);
   }
 
 

@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
 import appConfig from 'src/config/app.config';
+import * as fs from 'fs';
+import * as path from 'path';
 import { SeriesResponse } from './interfaces/series-response.interface';
 import { VideoProgressData } from './types/video-progress.types';
 import { VideoProgressService } from './services/video-progress.service';
@@ -155,6 +157,90 @@ export class SeriesService {
         }
     }
 
+    /**
+    * Stream lesson video with range support for video seeking
+    */
+    async streamLessonVideo(userId: string, lessonId: string, res: any, range?: string): Promise<void> {
+        try {
+            this.logger.log(`Streaming lesson video ${lessonId} for user: ${userId}`);
+
+
+            // Check if lesson is unlocked and user has access
+            const lessonProgress = await this.prisma.lessonProgress.findFirst({
+                where: {
+                    user_id: userId,
+                    lesson_id: lessonId,
+                    deleted_at: null,
+                },
+            });
+
+            if (!lessonProgress) {
+                res.status(403).json({ error: 'You cannot access this lesson' });
+                return;
+            }
+
+            // Get lesson file details
+            const lesson = await this.prisma.lessonFile.findFirst({
+                where: { id: lessonId, deleted_at: null },
+                select: { url: true, title: true },
+            });;
+
+            if (!lesson || !lesson.url) {
+                res.status(404).json({ error: 'Video file not found' });
+                return;
+            }
+
+            // Mark lesson as viewed
+            await this.lessonProgressService.markLessonAsViewed(userId, lessonId);
+
+            // Construct full file path - use the actual storage structure
+            const storageBasePath = path.join(process.cwd(), 'public', 'storage');
+            const lessonFilePath = path.join(storageBasePath, 'lesson', 'file', lesson.url);
+            // Check if file exists
+            if (!fs.existsSync(lessonFilePath)) {
+                res.status(404).json({ error: 'Video file not found on server' });
+                return;
+            }
+
+            // Get file stats
+            const stat = fs.statSync(lessonFilePath);
+            const fileSize = stat.size;
+
+            // Parse range header
+            if (range) {
+                const parts = range.replace(/bytes=/, "").split("-");
+                console.log('parts', parts);
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+                const chunksize = (end - start) + 1;
+                const file = fs.createReadStream(lessonFilePath, { start, end });
+
+                const head = {
+                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunksize,
+                    'Content-Type': 'video/mp4',
+                };
+
+                res.writeHead(206, head);
+                file.pipe(res);
+            } else {
+                const head = {
+                    'Content-Length': fileSize,
+                    'Content-Type': 'video/mp4',
+                };
+
+                res.writeHead(200, head);
+                fs.createReadStream(lessonFilePath).pipe(res);
+            }
+
+            this.logger.log(`Video streaming started for lesson ${lessonId}`);
+        } catch (error) {
+            this.logger.error(`Error streaming video: ${error.message}`, error.stack);
+            res.status(500).json({ error: 'Failed to stream video' });
+        }
+    }
+
     // ==================== VIDEO PROGRESS METHODS ====================
 
     /**
@@ -293,7 +379,7 @@ export class SeriesService {
         progressData: VideoProgressData
     ): Promise<SeriesResponse<any>> {
         const result = await this.lessonProgressService.updateVideoProgress(userId, lessonId, progressData);
-      
+
         // If auto-completed, update course progress
         if (result.success && result.data?.auto_completed) {
             const lesson = await this.prisma.lessonFile.findFirst({
