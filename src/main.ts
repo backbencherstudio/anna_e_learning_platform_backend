@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import helmet from 'helmet';
 import { join } from 'path';
 // internal imports
@@ -26,6 +27,7 @@ async function bootstrap() {
   }));
 
   app.setGlobalPrefix('api');
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Configure express for large file uploads
   app.use(require('express').json({ limit: '100mb' }));

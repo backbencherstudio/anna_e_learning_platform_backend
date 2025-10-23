@@ -21,6 +21,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { StudentModule } from './modules/student/student.module';
+import { ChunkUploadGateway } from './common/lib/ChunkedUpload/chunk-upload.gateway';
 
 @Module({
   imports: [
@@ -82,6 +83,7 @@ import { StudentModule } from './modules/student/student.module';
     //   useClass: ThrottlerBehindProxyGuard,
     // },
     AppService,
+    ChunkUploadGateway,
   ],
 })
 export class AppModule {

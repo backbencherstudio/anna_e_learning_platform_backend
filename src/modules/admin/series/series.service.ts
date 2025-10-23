@@ -9,6 +9,8 @@ import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
 import { VideoDurationService } from '../../../common/lib/video-duration/video-duration.service';
 import { SeriesPublishService } from '../../queue/services/series-publish.service';
+import { ChunkedUploadService } from '../../../common/lib/ChunkedUpload/chunked-upload.service';
+import { ChunkUploadQueueService } from '../../queue/services/chunk-upload.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateLessonFileDto } from './dto/create-lesson-file.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
@@ -20,7 +22,9 @@ export class SeriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly videoDurationService: VideoDurationService,
-    private readonly seriesPublishService: SeriesPublishService
+    private readonly seriesPublishService: SeriesPublishService,
+    private readonly chunkedUploadService: ChunkedUploadService,
+    private readonly chunkUploadQueueService: ChunkUploadQueueService
   ) { }
 
   /**
@@ -1420,95 +1424,60 @@ export class SeriesService {
     }
   ): Promise<SeriesResponse<any>> {
     try {
-      // Check if course exists
+      // Validate course exists
       const existingCourse = await this.prisma.course.findUnique({
         where: { id: createLessonFileDto.course_id },
-        select: {
-          id: true,
-          title: true,
-          series_id: true,
-        },
+        select: { id: true, title: true, series_id: true },
       });
 
       if (!existingCourse) {
         throw new NotFoundException(`Course with ID ${createLessonFileDto.course_id} not found`);
       }
 
+      // Initialize variables
       let videoFileName: string | undefined;
       let docFileName: string | undefined;
       let videoLength: string | null = null;
       let primaryKind = 'other';
       let title = createLessonFileDto.title || 'Lesson';
+      let backgroundUploadId: string | undefined;
 
-      // Process video file if exists
+      // File size thresholds
+      const STREAM_THRESHOLD = 50 * 1024 * 1024; // 50MB
+      const CHUNK_THRESHOLD = 300 * 1024 * 1024; // 300MB
+
+      // Process video file
       if (files.videoFile) {
-        const videoTitle = createLessonFileDto.title || files.videoFile.originalname.split('.')[0];
-        title = videoTitle;
-        videoFileName = StringHelper.generateLessonFileNameWithoutPosition(videoTitle, files.videoFile.originalname);
-
-        // Check if file is large (>100MB) and use streaming upload
-        const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
-        if (files.videoFile.size > LARGE_FILE_THRESHOLD) {
-          this.logger.log(`Uploading large video file: ${videoFileName} (${Math.round(files.videoFile.size / 1024 / 1024)}MB)`);
-          await this.uploadLargeFileWithProgress(
-            appConfig().storageUrl.lesson_file + videoFileName,
-            files.videoFile,
-            (progress) => {
-              this.logger.log(`Video upload progress: ${progress}%`);
-            }
-          );
-        } else {
-          await SojebStorage.put(appConfig().storageUrl.lesson_file + videoFileName, files.videoFile.buffer);
-        }
-
-        const fileKind = this.getFileKind(files.videoFile.mimetype);
-        primaryKind = fileKind;
-
-        if (fileKind === 'video' && this.videoDurationService.isVideoFile(files.videoFile.mimetype)) {
-          try {
-            videoLength = await this.videoDurationService.calculateVideoLength(files.videoFile.buffer, files.videoFile.originalname);
-          } catch (error) {
-            this.logger.error(`Failed to calculate video length for ${videoFileName}: ${error.message}`, error.stack);
-          }
-        }
+        await this.handleVideoFile(
+          files.videoFile,
+          createLessonFileDto,
+          STREAM_THRESHOLD,
+          CHUNK_THRESHOLD,
+          (fileName) => { videoFileName = fileName; },
+          (length) => { videoLength = length; },
+          (kind) => { primaryKind = kind; },
+          (uploadId) => { backgroundUploadId = uploadId; },
+          (newTitle) => { title = newTitle; }
+        );
       }
 
-      // Process document file if exists
+      // Process document file
       if (files.docFile) {
-        const docTitle = createLessonFileDto.title || files.docFile.originalname.split('.')[0];
-        if (!title || title === 'Lesson') {
-          title = docTitle;
-        }
-        docFileName = StringHelper.generateLessonFileNameWithoutPosition(docTitle, files.docFile.originalname);
-
-        // Check if file is large (>100MB) and use streaming upload
-        const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
-        if (files.docFile.size > LARGE_FILE_THRESHOLD) {
-          this.logger.log(`Uploading large document file: ${docFileName} (${Math.round(files.docFile.size / 1024 / 1024)}MB)`);
-          await this.uploadLargeFileWithProgress(
-            appConfig().storageUrl.doc_file + docFileName,
-            files.docFile,
-            (progress) => {
-              this.logger.log(`Document upload progress: ${progress}%`);
-            }
-          );
-        } else {
-          await SojebStorage.put(appConfig().storageUrl.doc_file + docFileName, files.docFile.buffer);
-        }
-
-        const docFileKind = this.getFileKind(files.docFile.mimetype);
-        if (!files.videoFile) {
-          primaryKind = docFileKind;
-        }
+        await this.handleDocumentFile(
+          files.docFile,
+          createLessonFileDto,
+          (fileName) => { docFileName = fileName; },
+          (kind) => { if (!files.videoFile) primaryKind = kind; },
+          (newTitle) => { if (!title || title === 'Lesson') title = newTitle; }
+        );
       }
 
-      // Create lesson file in a transaction
+      // Create lesson file in database
       const result = await this.prisma.$transaction(async (prisma) => {
-        // Create the lesson file
-        const lessonFile = await prisma.lessonFile.create({
+        return await prisma.lessonFile.create({
           data: {
             course_id: createLessonFileDto.course_id,
-            title: title,
+            title,
             url: videoFileName || undefined,
             doc: docFileName || undefined,
             kind: primaryKind,
@@ -1516,85 +1485,301 @@ export class SeriesService {
             video_length: videoLength,
           },
         });
-
-        return lessonFile;
       });
 
-      // Update course video length if video was added
-      if (files.videoFile && videoLength) {
-        const course = await this.prisma.course.findUnique({
-          where: { id: createLessonFileDto.course_id },
-          include: {
-            lesson_files: {
-              select: { video_length: true },
-            },
-          },
-        });
-
-        if (course && course.lesson_files.length > 0) {
-          const lessonLengths = course.lesson_files
-            .map(lesson => lesson.video_length)
-            .filter(length => length);
-
-          if (lessonLengths.length > 0) {
-            const courseLength = this.videoDurationService.calculateTotalLength(lessonLengths);
-            await this.prisma.course.update({
-              where: { id: createLessonFileDto.course_id },
-              data: { video_length: courseLength },
-            });
-          }
-        }
+      // Start background chunked upload for large files
+      if (backgroundUploadId && files.videoFile && files.videoFile.size > CHUNK_THRESHOLD) {
+        this.startBackgroundUpload(
+          result.id,
+          backgroundUploadId,
+          files.videoFile,
+          videoFileName || '',
+          createLessonFileDto.course_id,
+          existingCourse.series_id
+        );
       }
 
-      // Update series video length
-      await this.updateSeriesTotalsVideoLength(existingCourse.series_id);
-
-      // Fetch the complete lesson file with relations
-      const lessonFileWithRelations = await this.prisma.lessonFile.findUnique({
-        where: { id: result.id },
-        include: {
-          course: {
-            select: {
-              id: true,
-              title: true,
-              series: {
-                select: {
-                  id: true,
-                  title: true,
-                  slug: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      // Add file URLs
-      if (lessonFileWithRelations?.url) {
-        lessonFileWithRelations['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonFileWithRelations.url);
-      }
-      if (lessonFileWithRelations?.doc) {
-        lessonFileWithRelations['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonFileWithRelations.doc);
+      // Update course/series for small/medium files
+      if (files.videoFile && files.videoFile.size < CHUNK_THRESHOLD) {
+        await this.updateCourseAndSeriesLength(
+          createLessonFileDto.course_id,
+          existingCourse.series_id,
+          videoLength
+        );
       }
 
-      return {
-        success: true,
-        message: 'Lesson file created successfully',
-        data: lessonFileWithRelations,
-      };
+      // Prepare response based on upload type
+      const isBackgroundUpload = backgroundUploadId && files.videoFile && files.videoFile.size > CHUNK_THRESHOLD;
+
+      if (isBackgroundUpload) {
+        return this.getBackgroundUploadResponse(result, existingCourse, backgroundUploadId);
+      }
+
+      // For small/medium files, fetch complete data
+      const lessonFileWithRelations = await this.fetchLessonFileWithRelations(result.id);
+      return this.getNormalUploadResponse(lessonFileWithRelations);
+
     } catch (error) {
-      this.logger.error(`Error creating lesson file for course ${createLessonFileDto.course_id}: ${error.message}`, error.stack);
-
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-
+      this.logger.error(`Error creating lesson file: ${error.message}`, error.stack);
+      if (error instanceof NotFoundException) throw error;
       return {
         success: false,
         message: 'Failed to create lesson file',
         error: error.message,
       };
     }
+  }
+
+  // Helper Methods
+
+  private async handleVideoFile(
+    videoFile: Express.Multer.File,
+    dto: CreateLessonFileDto,
+    STREAM_THRESHOLD: number,
+    CHUNK_THRESHOLD: number,
+    setFileName: (name: string) => void,
+    setVideoLength: (length: string) => void,
+    setKind: (kind: string) => void,
+    setUploadId: (id: string) => void,
+    setTitle: (title: string) => void
+  ) {
+    const videoTitle = dto.title || videoFile.originalname.split('.')[0];
+    setTitle(videoTitle);
+
+    let fileName = StringHelper.generateLessonFileNameWithoutPosition(videoTitle, videoFile.originalname);
+
+    // Determine upload strategy based on file size
+    if (videoFile.size > CHUNK_THRESHOLD) {
+      // Large files - background chunked upload
+      this.logger.log(`🚀 Chunked upload: ${fileName} (${Math.round(videoFile.size / 1024 / 1024)}MB)`);
+      setUploadId(`video-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
+      fileName = `pending-${fileName}`;
+    } else if (videoFile.size > STREAM_THRESHOLD) {
+      // Medium files - streaming upload
+      this.logger.log(`📤 Streaming upload: ${fileName} (${Math.round(videoFile.size / 1024 / 1024)}MB)`);
+      await this.uploadLargeFileWithProgress(
+        appConfig().storageUrl.lesson_file + fileName,
+        videoFile,
+        (progress) => { /* Silent progress */ }
+      );
+    } else {
+      // Small files - buffer upload
+      this.logger.log(`📦 Buffer upload: ${fileName} (${Math.round(videoFile.size / 1024 / 1024)}MB)`);
+      await SojebStorage.put(appConfig().storageUrl.lesson_file + fileName, videoFile.buffer);
+    }
+
+    setFileName(fileName);
+
+    // Get file kind
+    const fileKind = this.getFileKind(videoFile.mimetype);
+    setKind(fileKind);
+
+    // Calculate video duration only for small files
+    if (fileKind === 'video' && this.videoDurationService.isVideoFile(videoFile.mimetype) && videoFile.size < STREAM_THRESHOLD) {
+      try {
+        const length = await this.videoDurationService.calculateVideoLength(videoFile.buffer, videoFile.originalname);
+        setVideoLength(length);
+      } catch (error) {
+        this.logger.error(`Failed to calculate video duration: ${error.message}`);
+      }
+    }
+  }
+
+  private async handleDocumentFile(
+    docFile: Express.Multer.File,
+    dto: CreateLessonFileDto,
+    setFileName: (name: string) => void,
+    setKind: (kind: string) => void,
+    setTitle: (title: string) => void
+  ) {
+    const docTitle = dto.title || docFile.originalname.split('.')[0];
+    setTitle(docTitle);
+
+    const fileName = StringHelper.generateLessonFileNameWithoutPosition(docTitle, docFile.originalname);
+
+    // Handle large documents with streaming
+    const LARGE_FILE_THRESHOLD = 100 * 1024 * 1024; // 100MB
+    if (docFile.size > LARGE_FILE_THRESHOLD) {
+      this.logger.log(`📄 Streaming doc: ${fileName}`);
+      await this.uploadLargeFileWithProgress(
+        appConfig().storageUrl.doc_file + fileName,
+        docFile,
+        (progress) => { /* Silent progress */ }
+      );
+    } else {
+      await SojebStorage.put(appConfig().storageUrl.doc_file + fileName, docFile.buffer);
+    }
+
+    setFileName(fileName);
+    setKind(this.getFileKind(docFile.mimetype));
+  }
+
+  private startBackgroundUpload(
+    lessonFileId: string,
+    uploadId: string,
+    videoFile: Express.Multer.File,
+    videoFileName: string,
+    courseId: string,
+    seriesId: string
+  ) {
+    this.chunkedUploadService.startBackgroundChunkedUpload(
+      videoFile,
+      appConfig().storageUrl.lesson_file + videoFileName.replace(/^pending-/, ''),
+      {
+        uploadId,
+        chunkSize: 10 * 1024 * 1024,
+        onProgress: (progress) => {
+          // Progress will be emitted via WebSocket in chunked-upload.service
+        },
+        onComplete: async (uploadResult, targetPath) => {
+          await this.handleUploadComplete(
+            lessonFileId,
+            uploadResult,
+            videoFileName,
+            courseId,
+            seriesId,
+            videoFile
+          );
+        },
+        onError: (error) => {
+          this.logger.error(`Chunked upload failed for ${uploadId}: ${error.message}`);
+        },
+      }
+    );
+  }
+
+  private async handleUploadComplete(
+    lessonFileId: string,
+    uploadResult: any,
+    videoFileName: string,
+    courseId: string,
+    seriesId: string,
+    videoFile: Express.Multer.File
+  ) {
+    try {
+      // Calculate video duration after upload
+      let finalVideoLength: string | null = null;
+      if (this.videoDurationService.isVideoFile(videoFile.mimetype)) {
+        try {
+          finalVideoLength = await this.videoDurationService.calculateVideoLength(
+            videoFile.buffer,
+            videoFile.originalname
+          );
+        } catch (error) {
+          this.logger.error(`Failed to calculate video duration: ${error.message}`);
+        }
+      }
+
+      // Update lesson file with final URL and duration
+      await this.prisma.lessonFile.update({
+        where: { id: lessonFileId },
+        data: {
+          url: videoFileName.replace(/^pending-/, ''),
+          video_length: finalVideoLength,
+        },
+      });
+
+      // Update course and series video length
+      await this.updateCourseAndSeriesLength(courseId, seriesId, finalVideoLength);
+
+      this.logger.log(`✅ Upload completed: Lesson ${lessonFileId}`);
+    } catch (error) {
+      this.logger.error(`Failed to finalize upload: ${error.message}`);
+    }
+  }
+
+  private async updateCourseAndSeriesLength(
+    courseId: string,
+    seriesId: string,
+    videoLength: string | null
+  ) {
+    if (!videoLength) return;
+
+    try {
+      const course = await this.prisma.course.findUnique({
+        where: { id: courseId },
+        include: {
+          lesson_files: {
+            select: { video_length: true },
+          },
+        },
+      });
+
+      if (course?.lesson_files.length) {
+        const lengths = course.lesson_files
+          .map(l => l.video_length)
+          .filter(Boolean);
+
+        if (lengths.length > 0) {
+          const totalLength = this.videoDurationService.calculateTotalLength(lengths);
+          await this.prisma.course.update({
+            where: { id: courseId },
+            data: { video_length: totalLength },
+          });
+
+          await this.updateSeriesTotalsVideoLength(seriesId);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Failed to update video lengths: ${error.message}`);
+    }
+  }
+
+  private async fetchLessonFileWithRelations(lessonFileId: string) {
+    const lesson = await this.prisma.lessonFile.findUnique({
+      where: { id: lessonFileId },
+      include: {
+        course: {
+          select: {
+            id: true,
+            title: true,
+            series: {
+              select: {
+                id: true,
+                title: true,
+                slug: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (lesson?.url) {
+      lesson['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lesson.url);
+    }
+    if (lesson?.doc) {
+      lesson['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lesson.doc);
+    }
+
+    return lesson;
+  }
+
+  private getBackgroundUploadResponse(result: any, course: any, uploadId: string) {
+    return {
+      success: true,
+      message: 'Lesson file created. Video upload in progress...',
+      data: {
+        id: result.id,
+        title: result.title,
+        url: result.url,
+        kind: result.kind,
+        video_length: result.video_length,
+        course: {
+          id: course.id,
+          title: course.title,
+        },
+        uploadId,
+      },
+    };
+  }
+
+  private getNormalUploadResponse(lesson: any) {
+    return {
+      success: true,
+      message: 'Lesson file created successfully',
+      data: lesson,
+    };
   }
 
   /**
