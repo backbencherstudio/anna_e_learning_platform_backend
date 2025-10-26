@@ -9,8 +9,6 @@ import { SojebStorage } from '../../../common/lib/Disk/SojebStorage';
 import appConfig from '../../../config/app.config';
 import { VideoDurationService } from '../../../common/lib/video-duration/video-duration.service';
 import { SeriesPublishService } from '../../queue/services/series-publish.service';
-import { ChunkedUploadService } from '../../../common/lib/ChunkedUpload/chunked-upload.service';
-import { ChunkUploadQueueService } from '../../queue/services/chunk-upload.service';
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateLessonFileDto } from './dto/create-lesson-file.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
@@ -22,9 +20,7 @@ export class SeriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly videoDurationService: VideoDurationService,
-    private readonly seriesPublishService: SeriesPublishService,
-    private readonly chunkedUploadService: ChunkedUploadService,
-    private readonly chunkUploadQueueService: ChunkUploadQueueService
+    private readonly seriesPublishService: SeriesPublishService
   ) { }
 
   /**
@@ -1082,7 +1078,7 @@ export class SeriesService {
       const fileSize = file.size;
       let uploadedBytes = 0;
 
-      // Create readable stream from buffer (simulating chunked upload)
+      // Create readable stream from buffer
       const stream = require('stream');
       const bufferStream = new stream.PassThrough();
       bufferStream.end(file.buffer);
@@ -1440,11 +1436,8 @@ export class SeriesService {
       let videoLength: string | null = null;
       let primaryKind = 'other';
       let title = createLessonFileDto.title || 'Lesson';
-      let backgroundUploadId: string | undefined;
-
-      // File size thresholds
+      // File size threshold
       const STREAM_THRESHOLD = 50 * 1024 * 1024; // 50MB
-      const CHUNK_THRESHOLD = 300 * 1024 * 1024; // 300MB
 
       // Process video file
       if (files.videoFile) {
@@ -1452,11 +1445,9 @@ export class SeriesService {
           files.videoFile,
           createLessonFileDto,
           STREAM_THRESHOLD,
-          CHUNK_THRESHOLD,
           (fileName) => { videoFileName = fileName; },
           (length) => { videoLength = length; },
           (kind) => { primaryKind = kind; },
-          (uploadId) => { backgroundUploadId = uploadId; },
           (newTitle) => { title = newTitle; }
         );
       }
@@ -1487,35 +1478,14 @@ export class SeriesService {
         });
       });
 
-      // Start background chunked upload for large files
-      if (backgroundUploadId && files.videoFile && files.videoFile.size > CHUNK_THRESHOLD) {
-        this.startBackgroundUpload(
-          result.id,
-          backgroundUploadId,
-          files.videoFile,
-          videoFileName || '',
-          createLessonFileDto.course_id,
-          existingCourse.series_id
-        );
-      }
+      // Update course/series video length
+      await this.updateCourseAndSeriesLength(
+        createLessonFileDto.course_id,
+        existingCourse.series_id,
+        videoLength
+      );
 
-      // Update course/series for small/medium files
-      if (files.videoFile && files.videoFile.size < CHUNK_THRESHOLD) {
-        await this.updateCourseAndSeriesLength(
-          createLessonFileDto.course_id,
-          existingCourse.series_id,
-          videoLength
-        );
-      }
-
-      // Prepare response based on upload type
-      const isBackgroundUpload = backgroundUploadId && files.videoFile && files.videoFile.size > CHUNK_THRESHOLD;
-
-      if (isBackgroundUpload) {
-        return this.getBackgroundUploadResponse(result, existingCourse, backgroundUploadId);
-      }
-
-      // For small/medium files, fetch complete data
+      // Fetch complete data
       const lessonFileWithRelations = await this.fetchLessonFileWithRelations(result.id);
       return this.getNormalUploadResponse(lessonFileWithRelations);
 
@@ -1536,26 +1506,19 @@ export class SeriesService {
     videoFile: Express.Multer.File,
     dto: CreateLessonFileDto,
     STREAM_THRESHOLD: number,
-    CHUNK_THRESHOLD: number,
     setFileName: (name: string) => void,
     setVideoLength: (length: string) => void,
     setKind: (kind: string) => void,
-    setUploadId: (id: string) => void,
     setTitle: (title: string) => void
   ) {
     const videoTitle = dto.title || videoFile.originalname.split('.')[0];
     setTitle(videoTitle);
 
-    let fileName = StringHelper.generateLessonFileNameWithoutPosition(videoTitle, videoFile.originalname);
+    const fileName = StringHelper.generateLessonFileNameWithoutPosition(videoTitle, videoFile.originalname);
 
     // Determine upload strategy based on file size
-    if (videoFile.size > CHUNK_THRESHOLD) {
-      // Large files - background chunked upload
-      this.logger.log(`🚀 Chunked upload: ${fileName} (${Math.round(videoFile.size / 1024 / 1024)}MB)`);
-      setUploadId(`video-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`);
-      fileName = `pending-${fileName}`;
-    } else if (videoFile.size > STREAM_THRESHOLD) {
-      // Medium files - streaming upload
+    if (videoFile.size > STREAM_THRESHOLD) {
+      // Large files - streaming upload
       this.logger.log(`📤 Streaming upload: ${fileName} (${Math.round(videoFile.size / 1024 / 1024)}MB)`);
       await this.uploadLargeFileWithProgress(
         appConfig().storageUrl.lesson_file + fileName,
@@ -1574,11 +1537,12 @@ export class SeriesService {
     const fileKind = this.getFileKind(videoFile.mimetype);
     setKind(fileKind);
 
-    // Calculate video duration only for small files
-    if (fileKind === 'video' && this.videoDurationService.isVideoFile(videoFile.mimetype) && videoFile.size < STREAM_THRESHOLD) {
+    // Calculate video duration for all video files
+    if (fileKind === 'video' && this.videoDurationService.isVideoFile(videoFile.mimetype)) {
       try {
         const length = await this.videoDurationService.calculateVideoLength(videoFile.buffer, videoFile.originalname);
         setVideoLength(length);
+        this.logger.log(`📹 Video duration calculated: ${length} for ${fileName}`);
       } catch (error) {
         this.logger.error(`Failed to calculate video duration: ${error.message}`);
       }
@@ -1614,79 +1578,6 @@ export class SeriesService {
     setKind(this.getFileKind(docFile.mimetype));
   }
 
-  private startBackgroundUpload(
-    lessonFileId: string,
-    uploadId: string,
-    videoFile: Express.Multer.File,
-    videoFileName: string,
-    courseId: string,
-    seriesId: string
-  ) {
-    this.chunkedUploadService.startBackgroundChunkedUpload(
-      videoFile,
-      appConfig().storageUrl.lesson_file + videoFileName.replace(/^pending-/, ''),
-      {
-        uploadId,
-        chunkSize: 10 * 1024 * 1024,
-        onProgress: (progress) => {
-          // Progress will be emitted via WebSocket in chunked-upload.service
-        },
-        onComplete: async (uploadResult, targetPath) => {
-          await this.handleUploadComplete(
-            lessonFileId,
-            uploadResult,
-            videoFileName,
-            courseId,
-            seriesId,
-            videoFile
-          );
-        },
-        onError: (error) => {
-          this.logger.error(`Chunked upload failed for ${uploadId}: ${error.message}`);
-        },
-      }
-    );
-  }
-
-  private async handleUploadComplete(
-    lessonFileId: string,
-    uploadResult: any,
-    videoFileName: string,
-    courseId: string,
-    seriesId: string,
-    videoFile: Express.Multer.File
-  ) {
-    try {
-      // Calculate video duration after upload
-      let finalVideoLength: string | null = null;
-      if (this.videoDurationService.isVideoFile(videoFile.mimetype)) {
-        try {
-          finalVideoLength = await this.videoDurationService.calculateVideoLength(
-            videoFile.buffer,
-            videoFile.originalname
-          );
-        } catch (error) {
-          this.logger.error(`Failed to calculate video duration: ${error.message}`);
-        }
-      }
-
-      // Update lesson file with final URL and duration
-      await this.prisma.lessonFile.update({
-        where: { id: lessonFileId },
-        data: {
-          url: videoFileName.replace(/^pending-/, ''),
-          video_length: finalVideoLength,
-        },
-      });
-
-      // Update course and series video length
-      await this.updateCourseAndSeriesLength(courseId, seriesId, finalVideoLength);
-
-      this.logger.log(`✅ Upload completed: Lesson ${lessonFileId}`);
-    } catch (error) {
-      this.logger.error(`Failed to finalize upload: ${error.message}`);
-    }
-  }
 
   private async updateCourseAndSeriesLength(
     courseId: string,
@@ -1755,24 +1646,6 @@ export class SeriesService {
     return lesson;
   }
 
-  private getBackgroundUploadResponse(result: any, course: any, uploadId: string) {
-    return {
-      success: true,
-      message: 'Lesson file created. Video upload in progress...',
-      data: {
-        id: result.id,
-        title: result.title,
-        url: result.url,
-        kind: result.kind,
-        video_length: result.video_length,
-        course: {
-          id: course.id,
-          title: course.title,
-        },
-        uploadId,
-      },
-    };
-  }
 
   private getNormalUploadResponse(lesson: any) {
     return {

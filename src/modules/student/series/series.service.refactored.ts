@@ -948,6 +948,13 @@ export class SeriesService {
                 status: { in: ['ACTIVE', 'COMPLETED'] as any },
                 payment_status: 'completed',
                 deleted_at: null,
+                series: {
+                    courses: {
+                        some: {
+                            id: courseId,
+                        },
+                    },
+                },
             },
             include: {
                 series: {

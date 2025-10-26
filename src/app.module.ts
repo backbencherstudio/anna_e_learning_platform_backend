@@ -18,6 +18,7 @@ import { AbilityModule } from './ability/ability.module';
 import { MailModule } from './mail/mail.module';
 import { ApplicationModule } from './modules/application/application.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { UploadModule } from './modules/upload/upload.module';
 import { ChatModule } from './modules/chat/chat.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { StudentModule } from './modules/student/student.module';
@@ -67,6 +68,7 @@ import { ChunkUploadGateway } from './common/lib/ChunkedUpload/chunk-upload.gate
     MailModule,
     ApplicationModule,
     AdminModule,
+    UploadModule,
     ChatModule,
     PaymentModule,
     StudentModule,

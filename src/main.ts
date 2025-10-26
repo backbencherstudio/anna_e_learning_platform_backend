@@ -76,19 +76,19 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new CustomExceptionFilter());
 
-  // storage setup
+  // storage setup - MinIO/S3 configuration
   SojebStorage.config({
-    driver: 'local',
+    driver: 'local', // Use S3 driver for MinIO
     connection: {
       rootUrl: appConfig().storageUrl.rootUrl,
       publicUrl: appConfig().storageUrl.rootUrlPublic,
-      // aws
+      // MinIO/S3 configuration
       awsBucket: appConfig().fileSystems.s3.bucket,
       awsAccessKeyId: appConfig().fileSystems.s3.key,
       awsSecretAccessKey: appConfig().fileSystems.s3.secret,
       awsDefaultRegion: appConfig().fileSystems.s3.region,
       awsEndpoint: appConfig().fileSystems.s3.endpoint,
-      minio: true,
+      minio: true, // Enable MinIO mode
     },
   });
 
