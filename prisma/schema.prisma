@@ -526,11 +526,13 @@ model Course {
   series_id String
   series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
-  title           String
-  price           Decimal?
-  intro_video_url String?
-  end_video_url   String?
-  video_length    String?
+  title              String
+  price              Decimal?
+  intro_video_url    String?
+  end_video_url      String?
+  video_length       String?
+  intro_video_length String?
+  end_video_length   String?
 
   lesson_files     LessonFile[]
   quizzes          Quiz[]

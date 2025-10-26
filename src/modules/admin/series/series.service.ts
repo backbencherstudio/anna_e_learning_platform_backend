@@ -320,6 +320,8 @@ export class SeriesService {
             title: true,
             price: true,
             video_length: true,
+            intro_video_length: true,
+            end_video_length: true,
             created_at: true,
             updated_at: true,
             intro_video_url: true,
@@ -1331,16 +1333,44 @@ export class SeriesService {
 
       // Handle intro video file upload if provided
       let introVideoUrl: string | undefined;
+      let introVideoLength: string | undefined;
       if (files.introVideo) {
         introVideoUrl = StringHelper.generateRandomFileName(files.introVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, files.introVideo.buffer);
+
+        // Calculate intro video length
+        if (this.videoDurationService.isVideoFile(files.introVideo.mimetype)) {
+          try {
+            introVideoLength = await this.videoDurationService.calculateVideoLength(
+              files.introVideo.buffer,
+              files.introVideo.originalname
+            );
+            this.logger.log(`📹 Intro video duration calculated: ${introVideoLength} for ${introVideoUrl}`);
+          } catch (error) {
+            this.logger.error(`Failed to calculate intro video duration: ${error.message}`);
+          }
+        }
       }
 
       // Handle end video file upload if provided
       let endVideoUrl: string | undefined;
+      let endVideoLength: string | undefined;
       if (files.endVideo) {
         endVideoUrl = StringHelper.generateRandomFileName(files.endVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, files.endVideo.buffer);
+
+        // Calculate end video length
+        if (this.videoDurationService.isVideoFile(files.endVideo.mimetype)) {
+          try {
+            endVideoLength = await this.videoDurationService.calculateVideoLength(
+              files.endVideo.buffer,
+              files.endVideo.originalname
+            );
+            this.logger.log(`📹 End video duration calculated: ${endVideoLength} for ${endVideoUrl}`);
+          } catch (error) {
+            this.logger.error(`Failed to calculate end video duration: ${error.message}`);
+          }
+        }
       }
 
 
@@ -1355,6 +1385,8 @@ export class SeriesService {
             price: createCourseDto.price || 0,
             intro_video_url: introVideoUrl,
             end_video_url: endVideoUrl,
+            intro_video_length: introVideoLength,
+            end_video_length: endVideoLength,
           },
         });
 
@@ -1584,8 +1616,6 @@ export class SeriesService {
     seriesId: string,
     videoLength: string | null
   ) {
-    if (!videoLength) return;
-
     try {
       const course = await this.prisma.course.findUnique({
         where: { id: courseId },
@@ -1596,19 +1626,36 @@ export class SeriesService {
         },
       });
 
-      if (course?.lesson_files.length) {
-        const lengths = course.lesson_files
-          .map(l => l.video_length)
-          .filter(Boolean);
+      if (course) {
+        // Collect all video lengths (lesson files + intro video + end video)
+        const allLengths: string[] = [];
 
-        if (lengths.length > 0) {
-          const totalLength = this.videoDurationService.calculateTotalLength(lengths);
+        // Add lesson file video lengths
+        if (course.lesson_files?.length) {
+          course.lesson_files.forEach(lesson => {
+            if (lesson.video_length) allLengths.push(lesson.video_length);
+          });
+        }
+
+        // Add intro and end video lengths
+        if (course.intro_video_length) allLengths.push(course.intro_video_length);
+        if (course.end_video_length) allLengths.push(course.end_video_length);
+
+        // If a specific videoLength is provided, add it to the calculation
+        if (videoLength) {
+          allLengths.push(videoLength);
+        }
+
+        if (allLengths.length > 0) {
+          const totalLength = this.videoDurationService.calculateTotalLength(allLengths);
           await this.prisma.course.update({
             where: { id: courseId },
             data: { video_length: totalLength },
           });
 
           await this.updateSeriesTotalsVideoLength(seriesId);
+
+          this.logger.log(`📊 Course video length updated: ${totalLength} (${allLengths.length} videos total)`);
         }
       }
     } catch (error) {
@@ -1683,6 +1730,7 @@ export class SeriesService {
 
       // Handle intro video file upload if provided
       let introVideoUrl: string | undefined;
+      let introVideoLength: string | undefined;
       if (introVideo) {
         // Delete old intro video if exists
         if (existingCourse.intro_video_url) {
@@ -1696,10 +1744,24 @@ export class SeriesService {
         // Upload new intro video
         introVideoUrl = StringHelper.generateRandomFileName(introVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, introVideo.buffer);
+
+        // Calculate intro video length
+        if (this.videoDurationService.isVideoFile(introVideo.mimetype)) {
+          try {
+            introVideoLength = await this.videoDurationService.calculateVideoLength(
+              introVideo.buffer,
+              introVideo.originalname
+            );
+            this.logger.log(`📹 Intro video duration calculated: ${introVideoLength} for ${introVideoUrl}`);
+          } catch (error) {
+            this.logger.error(`Failed to calculate intro video duration: ${error.message}`);
+          }
+        }
       }
 
       // Handle end video file upload if provided
       let endVideoUrl: string | undefined;
+      let endVideoLength: string | undefined;
       if (endVideo) {
         // Delete old end video if exists
         if (existingCourse.end_video_url) {
@@ -1713,6 +1775,19 @@ export class SeriesService {
         // Upload new end video
         endVideoUrl = StringHelper.generateRandomFileName(endVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, endVideo.buffer);
+
+        // Calculate end video length
+        if (this.videoDurationService.isVideoFile(endVideo.mimetype)) {
+          try {
+            endVideoLength = await this.videoDurationService.calculateVideoLength(
+              endVideo.buffer,
+              endVideo.originalname
+            );
+            this.logger.log(`📹 End video duration calculated: ${endVideoLength} for ${endVideoUrl}`);
+          } catch (error) {
+            this.logger.error(`Failed to calculate end video duration: ${error.message}`);
+          }
+        }
       }
 
       // Update course
@@ -1722,6 +1797,8 @@ export class SeriesService {
           ...updateData,
           ...(introVideoUrl && { intro_video_url: introVideoUrl }),
           ...(endVideoUrl && { end_video_url: endVideoUrl }),
+          ...(introVideoLength !== undefined && { intro_video_length: introVideoLength }),
+          ...(endVideoLength !== undefined && { end_video_length: endVideoLength }),
         },
         include: {
           lesson_files: {
@@ -1732,6 +1809,15 @@ export class SeriesService {
 
       // Update series total price and video length
       await this.updateSeriesTotalsPrice(existingCourse.series_id);
+
+      // Update course and series video lengths if videos were updated
+      if (introVideoLength !== undefined || endVideoLength !== undefined) {
+        await this.updateCourseAndSeriesLength(
+          courseId,
+          existingCourse.series_id,
+          null // We'll recalculate from all videos
+        );
+      }
 
       // Add file URLs
       if (updatedCourse.intro_video_url) {
@@ -2324,14 +2410,24 @@ export class SeriesService {
       const courses = await this.prisma.course.findMany({
         where: { series_id: seriesId },
         select: {
-          video_length: true
+          video_length: true,
+          intro_video_length: true,
+          end_video_length: true,
         },
       });
 
+      // Collect all video lengths (course videos + intro videos + end videos)
+      const allVideoLengths: string[] = [];
+
+      courses.forEach(course => {
+        if (course.video_length) allVideoLengths.push(course.video_length);
+        if (course.intro_video_length) allVideoLengths.push(course.intro_video_length);
+        if (course.end_video_length) allVideoLengths.push(course.end_video_length);
+      });
+
       // Calculate total video length
-      const courseLengths = courses.map(course => course.video_length).filter(length => length);
-      const seriesVideoLength = courseLengths.length > 0
-        ? this.videoDurationService.calculateTotalLength(courseLengths)
+      const seriesVideoLength = allVideoLengths.length > 0
+        ? this.videoDurationService.calculateTotalLength(allVideoLengths)
         : null;
 
       // Update series with calculated video length
@@ -2342,7 +2438,7 @@ export class SeriesService {
         },
       });
 
-      this.logger.log(`Updated series video length for ${seriesId}: ${seriesVideoLength}`);
+      this.logger.log(`📊 Series video length updated: ${seriesVideoLength} (${allVideoLengths.length} videos total)`);
     } catch (error) {
       this.logger.error(`Failed to update series video length for ${seriesId}: ${error.message}`, error.stack);
     }

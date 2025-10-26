@@ -582,6 +582,8 @@ export class SeriesService {
                                 title: true,
                                 price: true,
                                 video_length: true,
+                                intro_video_length: true,
+                                end_video_length: true,
                                 intro_video_url: true,
                                 end_video_url: true,
                                 lesson_files: {
@@ -638,17 +640,7 @@ export class SeriesService {
                 seriesItem['thumbnail_url'] = SojebStorage.url(appConfig().storageUrl.series_thumbnail + seriesItem.thumbnail);
             }
 
-            // Add file URLs for courses
-            if (seriesItem.courses && seriesItem.courses.length > 0) {
-                for (const course of seriesItem.courses) {
-                    if (course.intro_video_url) {
-                        course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
-                    }
-                    if (course.end_video_url) {
-                        course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
-                    }
-                }
-            }
+            // Note: File URLs will be added after course progress is loaded
         }
 
         // Get all lesson progress for all series to determine lock/unlock status
@@ -721,8 +713,66 @@ export class SeriesService {
             }
         }
 
-        // Add lesson files count to each series
+        // Get all course progress for all series
+        const allCourseIds = series.flatMap(s => s.courses?.map(c => c.id) || []);
+        const allCourseProgress = await this.prisma.courseProgress.findMany({
+            where: {
+                user_id: userId,
+                course_id: { in: allCourseIds },
+                deleted_at: null,
+            },
+            select: {
+                course_id: true,
+                id: true,
+                status: true,
+                completion_percentage: true,
+                is_completed: true,
+                started_at: true,
+                completed_at: true,
+                intro_video_unlocked: true,
+                intro_video_completed: true,
+                intro_video_viewed: true,
+                intro_video_time_spent: true,
+                intro_video_last_position: true,
+                intro_video_completion_percentage: true,
+                end_video_unlocked: true,
+                end_video_completed: true,
+                end_video_viewed: true,
+                end_video_time_spent: true,
+                end_video_last_position: true,
+                end_video_completion_percentage: true,
+            },
+        });
+
+        // Create course progress lookup map
+        const courseProgressMap = new Map(allCourseProgress.map(cp => [cp.course_id, cp]));
+
+        // Add course progress and file URLs to each series
         for (const seriesItem of series) {
+            if (seriesItem.courses && seriesItem.courses.length > 0) {
+                for (const course of seriesItem.courses) {
+                    // Add course progress
+                    const courseProgress = courseProgressMap.get(course.id) || null;
+                    course['course_progress'] = courseProgress;
+
+                    // Add file URLs based on unlock status
+                    if (course.intro_video_url && courseProgress?.intro_video_unlocked) {
+                        course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+                    } else if (course.intro_video_url) {
+                        course['intro_video_url'] = null;
+                        course['intro_video_message'] = 'Complete previous requirements to unlock intro video';
+                    }
+
+                    if (course.end_video_url && courseProgress?.end_video_unlocked) {
+                        course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+                    } else if (course.end_video_url) {
+                        course['end_video_url'] = null;
+                        course['end_video_message'] = 'Complete all lessons to unlock end video';
+                    }
+                }
+            }
+
+            // Add lesson files count
             const seriesCourseIds = seriesCourseMap.get(seriesItem.id) || [];
             const totalLessonFiles = lessonCounts
                 .filter(lc => seriesCourseIds.includes(lc.course_id))
@@ -789,6 +839,8 @@ export class SeriesService {
                                 title: true,
                                 price: true,
                                 video_length: true,
+                                intro_video_length: true,
+                                end_video_length: true,
                                 intro_video_url: true,
                                 end_video_url: true,
                                 lesson_files: {
@@ -845,20 +897,29 @@ export class SeriesService {
         }, 0) || 0;
         (seriesWithEnrollment._count as any).lesson_files = totalLessonFiles;
 
-        // Add file URLs for courses and lesson files
+        // Get course and lesson progress first
+        await this.addCourseAndLessonProgress(seriesWithEnrollment, userId);
+
+        // Add file URLs for courses and lesson files (only if videos are unlocked)
         if (seriesWithEnrollment.courses && seriesWithEnrollment.courses.length > 0) {
             for (const course of seriesWithEnrollment.courses) {
-                if (course.intro_video_url) {
+                // Check if intro video is unlocked before providing URL
+                if (course.intro_video_url && course.course_progress?.intro_video_unlocked) {
                     course['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.intro_video_url);
+                } else if (course.intro_video_url) {
+                    course['intro_video_url'] = null;
+                    course['intro_video_message'] = 'Complete previous requirements to unlock intro video';
                 }
-                if (course.end_video_url) {
+
+                // Check if end video is unlocked before providing URL
+                if (course.end_video_url && course.course_progress?.end_video_unlocked) {
                     course['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + course.end_video_url);
+                } else if (course.end_video_url) {
+                    course['end_video_url'] = null;
+                    course['end_video_message'] = 'Complete all lessons to unlock end video';
                 }
             }
         }
-
-        // Get course and lesson progress
-        await this.addCourseAndLessonProgress(seriesWithEnrollment, userId);
 
         return seriesWithEnrollment;
     }
@@ -972,6 +1033,8 @@ export class SeriesService {
                                 title: true,
                                 price: true,
                                 video_length: true,
+                                intro_video_length: true,
+                                end_video_length: true,
                                 created_at: true,
                                 updated_at: true,
                                 intro_video_url: true,
@@ -1020,15 +1083,7 @@ export class SeriesService {
             },
         };
 
-        // Add file URLs
-        if (courseWithEnrollment.intro_video_url) {
-            courseWithEnrollment['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + courseWithEnrollment.intro_video_url);
-        }
-        if (courseWithEnrollment.end_video_url) {
-            courseWithEnrollment['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + courseWithEnrollment.end_video_url);
-        }
-
-        // Add course progress for this course
+        // Add course progress for this course first
         const courseProgress = await this.prisma.courseProgress.findFirst({
             where: {
                 user_id: userId,
@@ -1058,6 +1113,21 @@ export class SeriesService {
         });
 
         courseWithEnrollment['course_progress'] = courseProgress || null;
+
+        // Add file URLs based on unlock status
+        if (courseWithEnrollment.intro_video_url && courseProgress?.intro_video_unlocked) {
+            courseWithEnrollment['intro_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + courseWithEnrollment.intro_video_url);
+        } else if (courseWithEnrollment.intro_video_url) {
+            courseWithEnrollment['intro_video_url'] = null;
+            courseWithEnrollment['intro_video_message'] = 'Complete previous requirements to unlock intro video';
+        }
+
+        if (courseWithEnrollment.end_video_url && courseProgress?.end_video_unlocked) {
+            courseWithEnrollment['end_video_url'] = SojebStorage.url(appConfig().storageUrl.module_file + courseWithEnrollment.end_video_url);
+        } else if (courseWithEnrollment.end_video_url) {
+            courseWithEnrollment['end_video_url'] = null;
+            courseWithEnrollment['end_video_message'] = 'Complete all lessons to unlock end video';
+        }
 
         // Optimize: Get all lesson progress in one query
         const allLessonIds = courseWithEnrollment.lesson_files?.map(l => l.id) || [];
@@ -1107,6 +1177,15 @@ export class SeriesService {
                 status: { in: ['ACTIVE', 'COMPLETED'] as any },
                 payment_status: 'completed',
                 deleted_at: null,
+                series: {
+                    courses: {
+                        some: {
+                            lesson_files: {
+                                some: { id: lessonId },
+                            },
+                        },
+                    },
+                },
             },
             include: {
                 series: {
@@ -1140,17 +1219,21 @@ export class SeriesService {
             return null;
         }
 
-        // Find the lesson in the courses
+        // Find the specific lesson by ID in the courses
         let lesson = null;
         let course = null;
         for (const courseItem of enrollment.series.courses) {
             if (courseItem.lesson_files.length > 0) {
-                lesson = courseItem.lesson_files[0];
-                course = {
-                    id: courseItem.id,
-                    title: courseItem.title,
-                };
-                break;
+                // Look for the specific lesson by ID
+                const foundLesson = courseItem.lesson_files.find(lf => lf.id === lessonId);
+                if (foundLesson) {
+                    lesson = foundLesson;
+                    course = {
+                        id: courseItem.id,
+                        title: courseItem.title,
+                    };
+                    break;
+                }
             }
         }
 
