@@ -170,17 +170,21 @@ export class LessonProgressService {
             const existingPercentage = existingProgress.completion_percentage ?? 0;
             const newPercentage = progressData.completion_percentage ?? 0;
 
-            if (newPercentage < existingPercentage) {
-                this.logger.log(`Completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for lesson ${lessonId}, user ${userId}`);
-                return {
-                    success: true,
-                    message: 'Video progress not updated - completion percentage cannot decrease',
-                    data: {
-                        progress: existingProgress,
-                        auto_completed: false,
-                        prevented_regression: true,
-                    },
-                };
+            // Prepare update data - always update time_spent and last_position
+            const updateData: any = {
+                time_spent: progressData.time_spent,
+                last_position: progressData.last_position,
+                updated_at: new Date(),
+            };
+
+            // Only update completion_percentage if it's not regressing
+            if (newPercentage >= existingPercentage) {
+                updateData.completion_percentage = progressData.completion_percentage;
+                updateData.is_viewed = (progressData.completion_percentage ?? 0) > 0;
+                updateData.viewed_at = (progressData.completion_percentage ?? 0) > 0 ? new Date() : undefined;
+            } else {
+                // Keep existing completion_percentage but log the prevention
+                this.logger.log(`Completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for lesson ${lessonId}, user ${userId}. Updating time_spent and last_position only.`);
             }
 
             // Update progress using existing schema fields
@@ -191,18 +195,11 @@ export class LessonProgressService {
                         lesson_id: lessonId,
                     },
                 },
-                data: {
-                    time_spent: progressData.time_spent,
-                    last_position: progressData.last_position,
-                    completion_percentage: progressData.completion_percentage,
-                    is_viewed: (progressData.completion_percentage ?? 0) > 0,
-                    viewed_at: (progressData.completion_percentage ?? 0) > 0 ? new Date() : undefined,
-                    updated_at: new Date(),
-                },
+                data: updateData,
             });
 
-            // Auto-complete lesson if 90%+ watched
-            if ((progressData.completion_percentage ?? 0) >= 90) {
+            // Auto-complete lesson if 90%+ watched (only if completion_percentage was updated)
+            if (newPercentage >= existingPercentage && (progressData.completion_percentage ?? 0) >= 90) {
                 this.logger.log(`Auto-completing lesson ${lessonId} for user ${userId} (${progressData.completion_percentage}% watched)`);
 
                 // Mark lesson as completed
@@ -223,12 +220,18 @@ export class LessonProgressService {
                 };
             }
 
+            // Return appropriate message based on whether completion_percentage was updated
+            const message = newPercentage < existingPercentage
+                ? 'Video progress updated (time and position only - completion percentage prevented from decreasing)'
+                : 'Video progress updated';
+
             return {
                 success: true,
-                message: 'Video progress updated',
+                message,
                 data: {
                     progress,
                     auto_completed: false,
+                    prevented_regression: newPercentage < existingPercentage,
                 },
             };
         } catch (error) {
