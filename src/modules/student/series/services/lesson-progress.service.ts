@@ -166,6 +166,23 @@ export class LessonProgressService {
                 };
             }
 
+            // Check if new completion percentage is lower than existing - don't allow regression
+            const existingPercentage = existingProgress.completion_percentage ?? 0;
+            const newPercentage = progressData.completion_percentage ?? 0;
+
+            if (newPercentage < existingPercentage) {
+                this.logger.log(`Completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for lesson ${lessonId}, user ${userId}`);
+                return {
+                    success: true,
+                    message: 'Video progress not updated - completion percentage cannot decrease',
+                    data: {
+                        progress: existingProgress,
+                        auto_completed: false,
+                        prevented_regression: true,
+                    },
+                };
+            }
+
             // Update progress using existing schema fields
             const progress = await this.prisma.lessonProgress.update({
                 where: {

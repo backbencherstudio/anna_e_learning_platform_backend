@@ -37,6 +37,23 @@ export class VideoProgressService {
 
             const { courseProgress } = validationResult;
 
+            // Check if new completion percentage is lower than existing - don't allow regression
+            const existingPercentage = courseProgress.intro_video_completion_percentage ?? 0;
+            const newPercentage = progressData.completion_percentage ?? 0;
+
+            if (newPercentage < existingPercentage) {
+                this.logger.log(`Intro video completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for course ${courseId}, user ${userId}`);
+                return {
+                    success: true,
+                    message: 'Intro video progress not updated - completion percentage cannot decrease',
+                    data: {
+                        progress: courseProgress,
+                        auto_completed: false,
+                        prevented_regression: true,
+                    } as any,
+                };
+            }
+
             // Update intro video progress
             const updatedProgress = await this.updateIntroVideoProgressData(userId, courseId, progressData);
 
@@ -107,6 +124,23 @@ export class VideoProgressService {
             }
 
             const { courseProgress } = validationResult;
+
+            // Check if new completion percentage is lower than existing - don't allow regression
+            const existingPercentage = courseProgress.end_video_completion_percentage ?? 0;
+            const newPercentage = progressData.completion_percentage ?? 0;
+
+            if (newPercentage < existingPercentage) {
+                this.logger.log(`End video completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for course ${courseId}, user ${userId}`);
+                return {
+                    success: true,
+                    message: 'End video progress not updated - completion percentage cannot decrease',
+                    data: {
+                        progress: courseProgress,
+                        auto_completed: false,
+                        prevented_regression: true,
+                    } as any,
+                };
+            }
 
             // Update end video progress
             const updatedProgress = await this.updateEndVideoProgressData(userId, courseId, progressData);
