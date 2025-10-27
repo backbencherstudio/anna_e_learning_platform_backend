@@ -37,51 +37,64 @@ export class VideoProgressService {
 
             const { courseProgress } = validationResult;
 
+            // Check if new completion percentage is lower than existing - don't allow regression
+            const existingPercentage = courseProgress.intro_video_completion_percentage ?? 0;
+            const newPercentage = progressData.completion_percentage ?? 0;
+
+            // Prepare update data - always update time_spent and last_position
+            const updateData: any = {
+                intro_video_time_spent: progressData.time_spent,
+                intro_video_last_position: progressData.last_position,
+                updated_at: new Date(),
+            };
+
+            // Only update completion_percentage if it's not regressing
+            if (newPercentage >= existingPercentage) {
+                updateData.intro_video_completion_percentage = progressData.completion_percentage;
+                updateData.intro_video_viewed = (progressData.completion_percentage ?? 0) > 0;
+            } else {
+                // Keep existing completion_percentage but log the prevention
+                this.logger.log(`Intro video completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for course ${courseId}, user ${userId}. Updating time_spent and last_position only.`);
+            }
+
             // Update intro video progress
-            const updatedProgress = await this.updateIntroVideoProgressData(userId, courseId, progressData);
+            const updatedProgress = await this.updateIntroVideoProgressDataWithCustomData(userId, courseId, updateData);
 
-            // Check if intro video should unlock first lesson at 90%
-            if (this.shouldUnlockFirstLesson(progressData.completion_percentage, courseProgress.intro_video_completed)) {
-                this.logger.log(`Unlocking first lesson for course ${courseId} (${progressData.completion_percentage}% watched)`);
+            // Check if intro video should unlock first lesson and auto-complete at 90% (only if completion_percentage was updated)
+            if (newPercentage >= existingPercentage && this.shouldUnlockFirstLesson(progressData.completion_percentage, courseProgress.intro_video_completed)) {
+                this.logger.log(`Unlocking first lesson and auto-completing intro video for course ${courseId} (${progressData.completion_percentage}% watched)`);
 
-                // Unlock first lesson without marking intro video as completed
+                // Unlock first lesson
                 await this.unlockFirstLessonAfterIntroProgress(userId, courseId, courseProgress.series_id);
+
+                // Auto-complete intro video
+                const completionResult = await this.markIntroVideoAsCompleted(userId, courseId, progressData);
 
                 return {
                     success: true,
-                    message: 'Intro video progress updated and first lesson unlocked',
+                    message: 'Intro video progress updated, first lesson unlocked and intro video auto-completed',
                     data: {
                         progress: updatedProgress,
-                        auto_completed: false,
+                        completion: completionResult.data,
+                        auto_completed: true,
                         first_lesson_unlocked: true,
                     } as any,
                 };
             }
 
-            // Auto-complete intro video if 100% watched
-            if (this.shouldAutoCompleteVideo(progressData.completion_percentage, courseProgress.intro_video_completed)) {
-                this.logger.log(`Auto-completing intro video for course ${courseId} (${progressData.completion_percentage}% watched)`);
-
-                const completionResult = await this.markIntroVideoAsCompleted(userId, courseId, progressData);
-
-                return {
-                    success: true,
-                    message: 'Intro video progress updated and auto-completed',
-                    data: {
-                        progress: updatedProgress,
-                        completion: completionResult.data,
-                        auto_completed: true,
-                    },
-                };
-            }
+            // Return appropriate message based on whether completion_percentage was updated
+            const message = newPercentage < existingPercentage
+                ? 'Intro video progress updated (time and position only - completion percentage prevented from decreasing)'
+                : SUCCESS_MESSAGES.INTRO_VIDEO_PROGRESS_UPDATED;
 
             return {
                 success: true,
-                message: SUCCESS_MESSAGES.INTRO_VIDEO_PROGRESS_UPDATED,
+                message,
                 data: {
                     progress: updatedProgress,
                     auto_completed: false,
-                },
+                    prevented_regression: newPercentage < existingPercentage,
+                } as any,
             };
         } catch (error) {
             this.logger.error(`Error updating intro video progress: ${error.message}`, error.stack);
@@ -108,11 +121,31 @@ export class VideoProgressService {
 
             const { courseProgress } = validationResult;
 
-            // Update end video progress
-            const updatedProgress = await this.updateEndVideoProgressData(userId, courseId, progressData);
+            // Check if new completion percentage is lower than existing - don't allow regression
+            const existingPercentage = courseProgress.end_video_completion_percentage ?? 0;
+            const newPercentage = progressData.completion_percentage ?? 0;
 
-            // Auto-complete end video if 100% watched
-            if (this.shouldAutoCompleteVideo(progressData.completion_percentage, courseProgress.end_video_completed)) {
+            // Prepare update data - always update time_spent and last_position
+            const updateData: any = {
+                end_video_time_spent: progressData.time_spent,
+                end_video_last_position: progressData.last_position,
+                updated_at: new Date(),
+            };
+
+            // Only update completion_percentage if it's not regressing
+            if (newPercentage >= existingPercentage) {
+                updateData.end_video_completion_percentage = progressData.completion_percentage;
+                updateData.end_video_viewed = (progressData.completion_percentage ?? 0) > 0;
+            } else {
+                // Keep existing completion_percentage but log the prevention
+                this.logger.log(`End video completion percentage regression prevented: ${newPercentage}% < ${existingPercentage}% for course ${courseId}, user ${userId}. Updating time_spent and last_position only.`);
+            }
+
+            // Update end video progress
+            const updatedProgress = await this.updateEndVideoProgressDataWithCustomData(userId, courseId, updateData);
+
+            // Auto-complete end video if 90%+ watched (only if completion_percentage was updated)
+            if (newPercentage >= existingPercentage && this.shouldAutoCompleteVideo(progressData.completion_percentage, courseProgress.end_video_completed)) {
                 this.logger.log(`Auto-completing end video for course ${courseId} (${progressData.completion_percentage}% watched)`);
 
                 const completionResult = await this.markEndVideoAsCompleted(userId, courseId, progressData);
@@ -128,13 +161,19 @@ export class VideoProgressService {
                 };
             }
 
+            // Return appropriate message based on whether completion_percentage was updated
+            const message = newPercentage < existingPercentage
+                ? 'End video progress updated (time and position only - completion percentage prevented from decreasing)'
+                : SUCCESS_MESSAGES.END_VIDEO_PROGRESS_UPDATED;
+
             return {
                 success: true,
-                message: SUCCESS_MESSAGES.END_VIDEO_PROGRESS_UPDATED,
+                message,
                 data: {
                     progress: updatedProgress,
                     auto_completed: false,
-                },
+                    prevented_regression: newPercentage < existingPercentage,
+                } as any,
             };
         } catch (error) {
             this.logger.error(`Error updating end video progress: ${error.message}`, error.stack);
@@ -302,6 +341,21 @@ export class VideoProgressService {
         });
     }
 
+    private async updateIntroVideoProgressDataWithCustomData(
+        userId: string,
+        courseId: string,
+        updateData: any
+    ) {
+        return await this.prisma.courseProgress.updateMany({
+            where: {
+                user_id: userId,
+                course_id: courseId,
+                deleted_at: null,
+            },
+            data: updateData,
+        });
+    }
+
     private async updateEndVideoProgressData(
         userId: string,
         courseId: string,
@@ -323,11 +377,24 @@ export class VideoProgressService {
         });
     }
 
+    private async updateEndVideoProgressDataWithCustomData(
+        userId: string,
+        courseId: string,
+        updateData: any
+    ) {
+        return await this.prisma.courseProgress.updateMany({
+            where: {
+                user_id: userId,
+                course_id: courseId,
+                deleted_at: null,
+            },
+            data: updateData,
+        });
+    }
+
     private shouldUnlockFirstLesson(completionPercentage?: number, isAlreadyCompleted?: boolean): boolean {
-        // Unlock if completion is >= 90% and intro video is not already completed
-        // OR if intro video is already completed (for cases where it was completed before this logic)
-        return ((completionPercentage ?? 0) >= VIDEO_PROGRESS_CONSTANTS.INTRO_VIDEO_UNLOCK_THRESHOLD && !isAlreadyCompleted) ||
-            (isAlreadyCompleted && (completionPercentage ?? 0) >= VIDEO_PROGRESS_CONSTANTS.INTRO_VIDEO_UNLOCK_THRESHOLD);
+        // Unlock if completion is >= 90% (regardless of completion status)
+        return (completionPercentage ?? 0) >= VIDEO_PROGRESS_CONSTANTS.INTRO_VIDEO_UNLOCK_THRESHOLD;
     }
 
     private shouldAutoCompleteVideo(completionPercentage?: number, isAlreadyCompleted?: boolean): boolean {

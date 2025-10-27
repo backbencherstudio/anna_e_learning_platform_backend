@@ -164,7 +164,6 @@ export class SeriesService {
         try {
             this.logger.log(`Streaming lesson video ${lessonId} for user: ${userId}`);
 
-
             // Check if lesson is unlocked and user has access
             const lessonProgress = await this.prisma.lessonProgress.findFirst({
                 where: {
@@ -172,6 +171,25 @@ export class SeriesService {
                     lesson_id: lessonId,
                     deleted_at: null,
                 },
+                include: {
+                    lesson: {
+                        select: {
+                            id: true,
+                            title: true,
+                            url: true,
+                            course: {
+                                select: {
+                                    id: true,
+                                    series: {
+                                        select: {
+                                            id: true,
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             });
 
             if (!lessonProgress) {
@@ -179,11 +197,17 @@ export class SeriesService {
                 return;
             }
 
+            // Check if lesson is actually unlocked
+            if (!lessonProgress.lesson) {
+                res.status(404).json({ error: 'Lesson not found' });
+                return;
+            }
+
             // Get lesson file details
             const lesson = await this.prisma.lessonFile.findFirst({
                 where: { id: lessonId, deleted_at: null },
                 select: { url: true, title: true },
-            });;
+            });
 
             if (!lesson || !lesson.url) {
                 res.status(404).json({ error: 'Video file not found' });
@@ -195,39 +219,94 @@ export class SeriesService {
 
             // Construct full file path - use the actual storage structure
             const storageBasePath = path.join(process.cwd(), 'public', 'storage');
-            const lessonFilePath = path.join(storageBasePath, 'lesson', 'file', lesson.url);
-            // Check if file exists
+            let lessonFilePath = path.join(storageBasePath, 'lesson', 'file', lesson.url);
+
+            // Determine content type based on file extension
+            const fileExtension = path.extname(lesson.url).toLowerCase();
+            const contentTypeMap = {
+                '.mp4': 'video/mp4',
+                '.webm': 'video/webm',
+                '.avi': 'video/x-msvideo',
+                '.mov': 'video/quicktime',
+                '.mkv': 'video/x-matroska',
+            };
+            const contentType = contentTypeMap[fileExtension] || 'video/mp4';
+
+            // Check if file exists as single file
             if (!fs.existsSync(lessonFilePath)) {
-                res.status(404).json({ error: 'Video file not found on server' });
-                return;
+                // Check if it's a chunked file (look for .chunk-0)
+                const chunkedFilePath = lessonFilePath + '.chunk-0';
+                if (fs.existsSync(chunkedFilePath)) {
+                    // This is a chunked file - use chunked streaming
+                    this.logger.log(`Detected chunked video file: ${lesson.url}`);
+                    return await this.streamChunkedVideo(lessonFilePath, res, range, contentType);
+                } else {
+                    res.status(404).json({ error: 'Video file not found on server' });
+                    return;
+                }
             }
 
-            // Get file stats
+            // Get file stats for single file
             const stat = fs.statSync(lessonFilePath);
             const fileSize = stat.size;
+           
 
-            // Parse range header
+            // Parse range header with better validation
             if (range) {
                 const parts = range.replace(/bytes=/, "").split("-");
-                console.log('parts', parts);
                 const start = parseInt(parts[0], 10);
                 const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+                // Validate range
+                if (start >= fileSize || end >= fileSize || start > end) {
+                    res.status(416).json({ error: 'Range Not Satisfiable' });
+                    return;
+                }
+
                 const chunksize = (end - start) + 1;
                 const file = fs.createReadStream(lessonFilePath, { start, end });
+            
 
                 const head = {
                     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
                     'Accept-Ranges': 'bytes',
                     'Content-Length': chunksize,
-                    'Content-Type': 'video/mp4',
+                    'Content-Type': contentType,
+                    // Security headers to prevent downloads
+                    'Content-Disposition': 'inline',
+                    'X-Content-Type-Options': 'nosniff',
+                    'X-Frame-Options': 'SAMEORIGIN',
+                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                    // CORS headers for video streaming
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
+                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+                    'Cross-Origin-Resource-Policy': 'cross-origin',
                 };
 
                 res.writeHead(206, head);
                 file.pipe(res);
+                //fs.createReadStream(lessonFilePath).pipe(res);
             } else {
                 const head = {
                     'Content-Length': fileSize,
-                    'Content-Type': 'video/mp4',
+                    'Content-Type': contentType,
+                    // Security headers for full file requests
+                    'Content-Disposition': 'inline',
+                    'X-Content-Type-Options': 'nosniff',
+                    'X-Frame-Options': 'SAMEORIGIN',
+                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                    // CORS headers for video streaming
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
+                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+                    'Cross-Origin-Resource-Policy': 'cross-origin',
                 };
 
                 res.writeHead(200, head);
@@ -237,7 +316,194 @@ export class SeriesService {
             this.logger.log(`Video streaming started for lesson ${lessonId}`);
         } catch (error) {
             this.logger.error(`Error streaming video: ${error.message}`, error.stack);
-            res.status(500).json({ error: 'Failed to stream video' });
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Failed to stream video' });
+            }
+        }
+    }
+
+    /**
+     * Handle chunked video file streaming
+     */
+    private async streamChunkedVideo(
+        baseFilePath: string,
+        res: any,
+        range?: string,
+        contentType: string = 'video/mp4'
+    ): Promise<void> {
+        try {
+            // Find all chunk files
+            const chunkFiles: string[] = [];
+            let chunkIndex = 0;
+            let totalSize = 0;
+
+            while (true) {
+                const chunkPath = `${baseFilePath}.chunk-${chunkIndex}`;
+                if (fs.existsSync(chunkPath)) {
+                    chunkFiles.push(chunkPath);
+                    totalSize += fs.statSync(chunkPath).size;
+                    chunkIndex++;
+                } else {
+                    break;
+                }
+            }
+
+            if (chunkFiles.length === 0) {
+                res.status(404).json({ error: 'No chunk files found' });
+                return;
+            }
+
+            this.logger.log(`Streaming chunked video: ${chunkFiles.length} chunks, total size: ${totalSize} bytes`);
+
+            if (range) {
+                // Handle range requests for chunked files
+                const parts = range.replace(/bytes=/, "").split("-");
+                const start = parseInt(parts[0], 10);
+                const end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+
+                // Validate range
+                if (start >= totalSize || end >= totalSize || start > end) {
+                    res.status(416).json({ error: 'Range Not Satisfiable' });
+                    return;
+                }
+
+                // Find which chunks contain the requested range
+                let currentOffset = 0;
+                let chunkStartIndex = 0;
+                let chunkEndIndex = 0;
+                let chunkStartOffset = 0;
+                let chunkEndOffset = 0;
+
+                // Find start chunk
+                for (let i = 0; i < chunkFiles.length; i++) {
+                    const chunkSize = fs.statSync(chunkFiles[i]).size;
+                    if (start < currentOffset + chunkSize) {
+                        chunkStartIndex = i;
+                        chunkStartOffset = start - currentOffset;
+                        break;
+                    }
+                    currentOffset += chunkSize;
+                }
+
+                // Find end chunk
+                currentOffset = 0;
+                for (let i = 0; i < chunkFiles.length; i++) {
+                    const chunkSize = fs.statSync(chunkFiles[i]).size;
+                    if (end < currentOffset + chunkSize) {
+                        chunkEndIndex = i;
+                        chunkEndOffset = end - currentOffset;
+                        break;
+                    }
+                    currentOffset += chunkSize;
+                }
+
+                const chunksize = (end - start) + 1;
+
+                const head = {
+                    'Content-Range': `bytes ${start}-${end}/${totalSize}`,
+                    'Accept-Ranges': 'bytes',
+                    'Content-Length': chunksize,
+                    'Content-Type': contentType,
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
+                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+                    'Cross-Origin-Resource-Policy': 'cross-origin',
+                    'Content-Disposition': 'inline',
+                    'X-Content-Type-Options': 'nosniff',
+                    'X-Frame-Options': 'SAMEORIGIN',
+                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                };
+
+                res.writeHead(206, head);
+
+                // Stream the appropriate chunks
+                if (chunkStartIndex === chunkEndIndex) {
+                    // Range is within a single chunk
+                    const chunkPath = chunkFiles[chunkStartIndex];
+                    const chunkSize = fs.statSync(chunkPath).size;
+                    const actualEnd = Math.min(chunkEndOffset, chunkSize - 1);
+
+                    fs.createReadStream(chunkPath, {
+                        start: chunkStartOffset,
+                        end: actualEnd
+                    }).pipe(res);
+                } else {
+                    // Range spans multiple chunks
+                    let bytesWritten = 0;
+                    const targetBytes = chunksize;
+
+                    for (let i = chunkStartIndex; i <= chunkEndIndex; i++) {
+                        const chunkPath = chunkFiles[i];
+                        const chunkSize = fs.statSync(chunkPath).size;
+
+                        let chunkStart = 0;
+                        let chunkEnd = chunkSize - 1;
+
+                        if (i === chunkStartIndex) {
+                            chunkStart = chunkStartOffset;
+                        }
+                        if (i === chunkEndIndex) {
+                            chunkEnd = chunkEndOffset;
+                        }
+
+                        const chunkStream = fs.createReadStream(chunkPath, {
+                            start: chunkStart,
+                            end: chunkEnd
+                        });
+
+                        chunkStream.on('data', (chunk) => {
+                            if (bytesWritten + chunk.length <= targetBytes) {
+                                res.write(chunk);
+                                bytesWritten += chunk.length;
+                            } else {
+                                const remainingBytes = targetBytes - bytesWritten;
+                                res.write(chunk.slice(0, remainingBytes));
+                                bytesWritten = targetBytes;
+                                res.end();
+                            }
+                        });
+
+                        chunkStream.on('end', () => {
+                            if (i === chunkEndIndex) {
+                                res.end();
+                            }
+                        });
+                    }
+                }
+            } else {
+                // Stream entire chunked file
+                const head = {
+                    'Content-Length': totalSize,
+                    'Content-Type': contentType,
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
+                    'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
+                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
+                    'Cross-Origin-Resource-Policy': 'cross-origin',
+                    'Content-Disposition': 'inline',
+                    'X-Content-Type-Options': 'nosniff',
+                    'X-Frame-Options': 'SAMEORIGIN',
+                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+                    'Pragma': 'no-cache',
+                    'Expires': '0',
+                };
+
+                res.writeHead(200, head);
+
+                // Stream all chunks sequentially
+                for (let i = 0; i < chunkFiles.length; i++) {
+                    const chunkStream = fs.createReadStream(chunkFiles[i]);
+                    chunkStream.pipe(res, { end: i === chunkFiles.length - 1 });
+                }
+            }
+        } catch (error) {
+            this.logger.error(`Error streaming chunked video: ${error.message}`, error.stack);
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Failed to stream chunked video' });
+            }
         }
     }
 

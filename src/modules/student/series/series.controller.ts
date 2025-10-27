@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req, Res, Headers, Options } from '@nestjs/common';
 import { SeriesService } from './series.service.refactored';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { SeriesResponse } from './interfaces/series-response.interface';
@@ -6,6 +6,8 @@ import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
 import { RolesGuard } from 'src/common/guard/role/roles.guard';
 import { Roles } from 'src/common/guard/role/roles.decorator';
 import { Role } from 'src/common/guard/role/role.enum';
+import { VideoProgressService } from './services/video-progress.service';
+import { VideoProgressResponse } from './types/video-progress.types';
 
 @ApiTags('student-series')
 @ApiBearerAuth()
@@ -79,6 +81,17 @@ export class SeriesController {
   ) {
     const userId = req.user.userId;
     return this.seriesService.streamLessonVideo(userId, lessonId, res, range);
+  }
+
+  @Options('lessons/:lessonId/stream')
+  @ApiOperation({ summary: 'Handle preflight request for video streaming' })
+  async handleStreamPreflight(@Res() res: any) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Range, Content-Length, Content-Type, Authorization');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.status(204).send();
   }
 
 
