@@ -19,7 +19,12 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "cmd": "cross-env PRISMA_ENV=1 ts-node src/cmd.ts"
+    "cmd": "cross-env PRISMA_ENV=1 ts-node src/cmd.ts",
+    "minio:start": "docker-compose up -d minio",
+    "minio:test": "node scripts/test-minio.js",
+    "minio:s3": "node scripts/test-minio-s3.js",
+    "minio:complete": "node scripts/test-complete-system.js",
+    "storage:test": "npm run build && node scripts/test-storage.js"
   },
   "dependencies": {
     "@casl/ability": "6.7.3",

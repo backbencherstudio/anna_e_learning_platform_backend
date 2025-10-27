@@ -34,6 +34,7 @@ export class AuthService {
           avatar: true,
           address: true,
           phone_number: true,
+          whatsapp_number: true,
           type: true,
           gender: true,
           date_of_birth: true,
@@ -91,6 +92,9 @@ export class AuthService {
       }
       if (updateUserDto.phone_number) {
         data.phone_number = updateUserDto.phone_number;
+      }
+      if (updateUserDto.whatsapp_number) {
+        data.whatsapp_number = updateUserDto.whatsapp_number;
       }
       if (updateUserDto.country) {
         data.country = updateUserDto.country;

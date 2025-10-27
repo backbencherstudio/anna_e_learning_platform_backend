@@ -1,6 +1,5 @@
-import { IsString, IsNotEmpty, IsOptional, IsInt, Min, MaxLength, ValidateNested, IsArray } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsInt, Min, MaxLength } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { CreateLessonFileDto } from './create-lesson-file.dto';
 
 export class CreateCourseDto {
 
@@ -13,10 +12,6 @@ export class CreateCourseDto {
     @MaxLength(200)
     title!: string;
 
-    @IsOptional()
-    @Transform(({ value }) => value === undefined ? undefined : Number(value))
-    @Min(0)
-    position?: number;
 
     @IsOptional()
     @Transform(({ value }) => value === undefined ? undefined : Number(value))
@@ -33,9 +28,4 @@ export class CreateCourseDto {
     @IsString()
     end_video_url?: string;
 
-    @IsOptional()
-    @IsArray()
-    @ValidateNested({ each: true })
-    @Type(() => CreateLessonFileDto)
-    lessons_files?: CreateLessonFileDto[];
 }

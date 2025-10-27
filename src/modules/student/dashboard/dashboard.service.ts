@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
 import appConfig from 'src/config/app.config';
-import { SeriesService } from '../series/series.service';
+import { SeriesService } from '../series/series.service.refactored';
 import { ScheduleEventService } from '../schedule-event/schedule-event.service';
 import { MaterialsService } from '../materials/materials.service';
 

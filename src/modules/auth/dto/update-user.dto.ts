@@ -47,6 +47,13 @@ export class UpdateUserDto extends PartialType(CreateUserDto) {
 
   @IsOptional()
   @ApiProperty({
+    description: 'Whatsapp number',
+    example: '+91 9876543210',
+  })
+  whatsapp_number?: string;
+
+  @IsOptional()
+  @ApiProperty({
     description: 'Address',
     example: 'New York, USA',
   })

@@ -512,7 +512,6 @@ export class QuizService {
             select: {
               id: true,
               title: true,
-              position: true,
             },
           },
           questions: {

@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { IoAdapter } from '@nestjs/platform-socket.io';
 import helmet from 'helmet';
 import { join } from 'path';
 // internal imports
@@ -26,6 +27,7 @@ async function bootstrap() {
   }));
 
   app.setGlobalPrefix('api');
+  app.useWebSocketAdapter(new IoAdapter(app));
 
   // Configure express for large file uploads
   app.use(require('express').json({ limit: '100mb' }));
@@ -34,7 +36,7 @@ async function bootstrap() {
 
   // Configure CORS to handle preflight requests properly
   app.enableCors({
-    origin: ['*', 'http://localhost:3000', 'http://localhost:4000', 'http://127.0.0.1:5501', 'https://anna-eagles-academy.vercel.app', 'https://match-toolbar-strengthen-railroad.trycloudflare.com'],
+    origin: ['*', 'http://localhost:3000', 'http://localhost:4000', 'http://127.0.0.1:5500', 'http://127.0.0.1:5501', 'https://anna-eagles-academy.vercel.app', 'https://jones-began-duncan-precise.trycloudflare.com'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Origin',
@@ -74,19 +76,19 @@ async function bootstrap() {
   );
   app.useGlobalFilters(new CustomExceptionFilter());
 
-  // storage setup
+  // storage setup - MinIO/S3 configuration
   SojebStorage.config({
-    driver: 'local',
+    driver: 'local', // Use S3 driver for MinIO
     connection: {
       rootUrl: appConfig().storageUrl.rootUrl,
       publicUrl: appConfig().storageUrl.rootUrlPublic,
-      // aws
+      // MinIO/S3 configuration
       awsBucket: appConfig().fileSystems.s3.bucket,
       awsAccessKeyId: appConfig().fileSystems.s3.key,
       awsSecretAccessKey: appConfig().fileSystems.s3.secret,
       awsDefaultRegion: appConfig().fileSystems.s3.region,
       awsEndpoint: appConfig().fileSystems.s3.endpoint,
-      minio: true,
+      minio: true, // Enable MinIO mode
     },
   });
 

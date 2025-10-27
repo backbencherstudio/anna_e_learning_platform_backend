@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { SeriesService } from 'src/modules/admin/series/series.service';
-import { SeriesService as StudentSeriesService } from 'src/modules/student/series/series.service';
+import { SeriesService as StudentSeriesService } from 'src/modules/student/series/series.service.refactored';
 
 const prisma = new PrismaClient();
 
@@ -180,11 +180,17 @@ export class TransactionRepository {
       },
     });
 
-    // Unlock first lesson after successful payment
-    if (status === 'succeeded') {
-      const studentSeriesService = new StudentSeriesService(prisma as any);
-      await studentSeriesService.unlockFirstLessonForUser(updatedEnrollment.user_id, updatedEnrollment.series_id);
-    }
+
+    // Import and use SeriesService properly
+    const { SeriesService } = await import('../../../modules/student/series/series.service');
+    const seriesService = new SeriesService(prisma as any);
+    await seriesService.unlockFirstLessonForUser(updatedEnrollment.user_id, updatedEnrollment.series_id);
+
+    // Update user type to student
+    await prisma.user.update({
+      where: { id: updatedEnrollment.user_id },
+      data: { type: 'student' },
+    });
 
     // Recalculate available seats for the series
     if (updatedEnrollment && updatedEnrollment.series_id) {

@@ -512,6 +512,7 @@ model Series {
   checkouts       Checkout[]
   ScholarshipCode ScholarshipCode[]
   schedules       ScheduleEvent[]
+  feedbacks       Feedback[]
 
   @@map("series")
 }
@@ -525,12 +526,13 @@ model Course {
   series_id String
   series    Series @relation(fields: [series_id], references: [id], onDelete: Cascade)
 
-  title           String
-  price           Decimal?
-  position        Int      @default(0)
-  intro_video_url String?
-  end_video_url   String?
-  video_length    String?
+  title              String
+  price              Decimal?
+  intro_video_url    String?
+  end_video_url      String?
+  video_length       String?
+  intro_video_length String?
+  end_video_length   String?
 
   lesson_files     LessonFile[]
   quizzes          Quiz[]
@@ -543,7 +545,6 @@ model Course {
   schedules        ScheduleEvent[]
   course_progress  CourseProgress[]
 
-  @@index([series_id, position])
   @@map("courses")
 }
 
@@ -558,7 +559,6 @@ model LessonFile {
   doc          String?
   kind         String  @default("video") // "image","video","pdf","slides"
   alt          String?
-  position     Int     @default(0)
   video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
 
   course_id String?
@@ -965,11 +965,23 @@ model CourseProgress {
   series_id String
 
   // Progress tracking
-  status                String?   @default("pending") // pending, in_progress, completed, abandoned
-  started_at            DateTime?
-  is_completed          Boolean   @default(false)
-  completed_at          DateTime?
-  completion_percentage Float?    @default(0) // 0-100
+  status                            String?   @default("pending") // pending, in_progress, completed, abandoned
+  started_at                        DateTime?
+  is_completed                      Boolean   @default(false)
+  completed_at                      DateTime?
+  completion_percentage             Float?    @default(0) // 0-100
+  intro_video_unlocked              Boolean   @default(false)
+  intro_video_viewed                Boolean   @default(false)
+  intro_video_completed             Boolean   @default(false)
+  intro_video_time_spent            Int? // Time spent in seconds
+  intro_video_last_position         Int? // Video/audio position
+  intro_video_completion_percentage Float?    @default(0) // 0-100
+  end_video_unlocked                Boolean   @default(false)
+  end_video_viewed                  Boolean   @default(false)
+  end_video_completed               Boolean   @default(false)
+  end_video_time_spent              Int? // Time spent in seconds
+  end_video_last_position           Int? // Video/audio position
+  end_video_completion_percentage   Float?    @default(0) // 0-100
 
   // Relations
   user   User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1001,6 +1013,7 @@ model LessonProgress {
   time_spent            Int? // Time spent in seconds
   last_position         Int? // Video/audio position
   completion_percentage Float?    @default(0) // 0-100
+  is_unlocked           Boolean   @default(false)
 
   // Relations
   user   User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -1095,8 +1108,11 @@ model Feedback {
   status      String? @default("pending")
   file_url    String?
 
-  course_id String
-  course    Course @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  series_id String?
+  series    Series? @relation(fields: [series_id], references: [id], onDelete: Cascade)
+
+  course_id String?
+  course    Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
 
   user_id String
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)

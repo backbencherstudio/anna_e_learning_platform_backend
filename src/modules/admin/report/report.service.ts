@@ -115,35 +115,35 @@ export class ReportService {
                         "current_period": {
                             "label": "This month",
                             "data": [
-                                { "month": "Jan", "users": 0 },
-                                { "month": "Feb", "users": 0 },
-                                { "month": "Mar", "users": 0 },
-                                { "month": "Apr", "users": 0 },
-                                { "month": "May", "users": 0 },
-                                { "month": "Jun", "users": 0 },
-                                { "month": "Jul", "users": 0 },
-                                { "month": "Aug", "users": 0 },
-                                { "month": "Sep", "users": 0 },
-                                { "month": "Oct", "users": 0 },
-                                { "month": "Nov", "users": 0 },
+                                { "month": "Jan", "users": 142 },
+                                { "month": "Feb", "users": 90 },
+                                { "month": "Mar", "users": 142 },
+                                { "month": "Apr", "users": 129 },
+                                { "month": "May", "users": 142 },
+                                { "month": "Jun", "users": 163 },
+                                { "month": "Jul", "users": 190 },
+                                { "month": "Aug", "users": 177 },
+                                { "month": "Sep", "users": 120 },
+                                { "month": "Oct", "users": 185 },
+                                { "month": "Nov", "users": 160 },
                                 { "month": "Dec", "users": 185 }
                             ]
                         },
                         "last_period": {
                             "label": "Last month",
                             "data": [
-                                { "month": "Jan", "users": 0 },
-                                { "month": "Feb", "users": 0 },
-                                { "month": "Mar", "users": 0 },
-                                { "month": "Apr", "users": 0 },
-                                { "month": "May", "users": 0 },
-                                { "month": "Jun", "users": 0 },
-                                { "month": "Jul", "users": 0 },
-                                { "month": "Aug", "users": 0 },
-                                { "month": "Sep", "users": 0 },
-                                { "month": "Oct", "users": 0 },
-                                { "month": "Nov", "users": 142 },
-                                { "month": "Dec", "users": 0 }
+                                { "month": "Jan", "users": 142 },
+                                { "month": "Feb", "users": 125 },
+                                { "month": "Mar", "users": 42 },
+                                { "month": "Apr", "users": 156 },
+                                { "month": "May", "users": 142 },
+                                { "month": "Jun", "users": 163 },
+                                { "month": "Jul", "users": 70 },
+                                { "month": "Aug", "users": 177 },
+                                { "month": "Sep", "users": 185 },
+                                { "month": "Oct", "users": 185 },
+                                { "month": "Nov", "users": 92 },
+                                { "month": "Dec", "users": 185 }
                             ]
                         }
                     }
@@ -841,7 +841,6 @@ export class ReportService {
                     select: {
                         id: true,
                         title: true,
-                        position: true,
                         course_progress: {
                             select: {
                                 id: true,
@@ -859,7 +858,7 @@ export class ReportService {
                         },
                     },
                     orderBy: {
-                        position: 'asc',
+                        created_at: 'asc',
                     },
                 },
             },
@@ -887,7 +886,6 @@ export class ReportService {
                 return {
                     course_id: course.id,
                     course_title: course.title,
-                    position: course.position,
                     total_lesson_files: course._count.lesson_files,
                     total_progress_records: totalProgressRecords,
                     completed_courses: completedCourses,
@@ -961,7 +959,6 @@ export class ReportService {
                     select: {
                         id: true,
                         title: true,
-                        position: true,
                         course_progress: {
                             select: {
                                 id: true,
@@ -979,7 +976,7 @@ export class ReportService {
                         },
                     },
                     orderBy: {
-                        position: 'asc',
+                        created_at: 'asc',
                     },
                 },
             },
@@ -1008,7 +1005,6 @@ export class ReportService {
                 return {
                     course_id: course.id,
                     course_title: course.title,
-                    position: course.position,
                     total_lesson_files: course._count.lesson_files,
                     total_progress_records: totalProgressRecords,
                     completed_courses: completedCourses,

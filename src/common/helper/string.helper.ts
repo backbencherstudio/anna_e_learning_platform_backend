@@ -155,4 +155,29 @@ export class StringHelper {
     const baseName = `lesson-${position}:${cleanTitle}`;
     return extension ? `${baseName}.${extension}` : baseName;
   }
+
+  /**
+   * Generate a lesson file name without position in format: lesson-{title}
+   * @param title - The lesson title
+   * @param originalName - The original file name (for extension)
+   * @returns Formatted lesson file name
+   */
+  public static generateLessonFileNameWithoutPosition(title: string, originalName: string): string {
+    // Clean the title to make it file-system safe
+    const cleanTitle = title
+      .toLowerCase()
+      .replace(/[^\w\s-]/g, '') // Remove special characters
+      .replace(/\s+/g, '-') // Replace spaces with hyphens
+      .substring(0, 50); // Limit length
+
+    // Get file extension from original name
+    const extension = originalName.includes('.') ? originalName.split('.').pop() : '';
+
+    // Generate random suffix to ensure uniqueness
+    const randomSuffix = this.randomString(8);
+
+    // Format: lesson-{title}-{random}.{extension}
+    const baseName = `lesson-${cleanTitle}-${randomSuffix}`;
+    return extension ? `${baseName}.${extension}` : baseName;
+  }
 }

@@ -14,6 +14,8 @@ export class FeedbackService {
 
   async create(userId: string, dto: CreateFeedbackDto, file?: Express.Multer.File) {
     try {
+
+
       // optional file upload
       let storedFileName: string | null = null;
       if (file) {
@@ -22,13 +24,23 @@ export class FeedbackService {
         storedFileName = fileName;
       }
 
-      const course = await this.prisma.course.findUnique({ where: { id: dto.course_id } });
-      if (!course) throw new NotFoundException('Course not found');
+      // validate course exists if course_id is provided
+      if (dto.course_id) {
+        const course = await this.prisma.course.findUnique({ where: { id: dto.course_id } });
+        if (!course) throw new NotFoundException('Course not found');
+      }
+
+      // validate series exists if series_id is provided
+      if (dto.series_id) {
+        const series = await this.prisma.series.findUnique({ where: { id: dto.series_id } });
+        if (!series) throw new NotFoundException('Series not found');
+      }
 
       const feedback = await this.prisma.feedback.create({
         data: {
           user_id: userId,
-          course_id: dto.course_id,
+          course_id: dto.course_id || null,
+          series_id: dto.series_id || null,
           week_number: dto.week_number || null,
           type: dto.type || undefined,
           title: dto.title || null,
