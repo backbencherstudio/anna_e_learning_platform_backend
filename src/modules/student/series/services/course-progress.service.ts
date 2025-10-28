@@ -31,15 +31,16 @@ export class CourseProgressService {
             const completionPercentage = Math.round((completedLessons / totalLessons) * 100);
             const isCourseCompleted = completionPercentage === 100;
 
+             // If course is completed, unlock end video and start next course
+             if (isCourseCompleted) {
+                await this.handleCourseCompletion(userId, courseId, seriesId);
+            }
+
             // Update course progress
             await this.updateCourseProgressRecord(userId, courseId, seriesId, completionPercentage, isCourseCompleted);
 
             this.logger.log(`Updated course progress: ${completedLessons}/${totalLessons} lessons completed (${completionPercentage}%) - Course ${isCourseCompleted ? 'COMPLETED' : 'IN PROGRESS'}`);
 
-            // If course is completed, unlock end video and start next course
-            if (isCourseCompleted) {
-                await this.handleCourseCompletion(userId, courseId, seriesId);
-            }
         } catch (error) {
             this.logger.error(`Error updating course progress: ${error.message}`);
         }
@@ -276,6 +277,7 @@ export class CourseProgressService {
         completionPercentage: number,
         isCourseCompleted: boolean
     ) {
+
         // Check if course progress exists
         const existingProgress = await this.prisma.courseProgress.findFirst({
             where: {

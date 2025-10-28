@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards, Req, Param } from '@nestjs/common';
+import { Controller, Get, UseGuards, Req, Param, Query } from '@nestjs/common';
 import { CertificateService } from './certificate.service';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { ApiBearerAuth, ApiTags, ApiOperation } from '@nestjs/swagger';
@@ -14,10 +14,19 @@ export class CertificateController {
   constructor(private readonly certificateService: CertificateService) { }
 
   @Get('course-progress')
-  @ApiOperation({ summary: 'Get course progress data for certificates' })
-  async getCourseProgress(@Req() req: any) {
+  @ApiOperation({ summary: 'Get course progress data for certificates with pagination and filtering' })
+  async getCourseProgress(
+    @Req() req: any,
+    @Query('page') page: string = '1',
+    @Query('limit') limit: string = '10',
+    @Query('search') search?: string,
+    @Query('series_id') series_id?: string,
+    @Query('course_status') course_status?: 'pending' | 'in_progress' | 'completed' | 'abandoned'
+  ) {
     const userId = req.user.userId;
-    return this.certificateService.getCourseProgress(userId);
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    return this.certificateService.getCourseProgress(userId, pageNum, limitNum, search, series_id, course_status);
   }
 
   @Get('data/:courseId')

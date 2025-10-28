@@ -6,16 +6,41 @@ export class CertificateService {
     private readonly logger = new Logger(CertificateService.name);
     constructor(private readonly prisma: PrismaService) { }
 
-    async getCourseProgress(userId: string) {
+    async getCourseProgress(
+        userId: string,
+        page: number = 1,
+        limit: number = 10,
+        search?: string,
+        series_id?: string,
+        course_status?: 'pending' | 'in_progress' | 'completed' | 'abandoned'
+    ) {
         try {
             this.logger.log(`Fetching course progress data for user: ${userId}`);
 
-            // Get all completed enrollments for the user
+            const skip = (page - 1) * limit;
+
+            // Build where clause for filtering
+            const whereClause: any = {
+                user_id: userId,
+                deleted_at: null
+            };
+
+            // Add series filter
+            if (series_id) {
+                whereClause.series_id = series_id;
+            }
+
+            // Add course status filter
+            if (course_status) {
+                whereClause.status = course_status;
+            }
+
+            // Get all enrollments (not just completed ones) for better filtering
             const enrollments = await this.prisma.enrollment.findMany({
                 where: {
                     user_id: userId,
-                    status: 'COMPLETED' as any,
-                    deleted_at: null
+                    deleted_at: null,
+                    ...(series_id && { series_id })
                 },
                 include: {
                     series: {
@@ -30,10 +55,7 @@ export class CertificateService {
                                     title: true,
                                     created_at: true,
                                     course_progress: {
-                                        where: {
-                                            user_id: userId,
-                                            deleted_at: null
-                                        },
+                                        where: whereClause,
                                         select: {
                                             id: true,
                                             status: true,
@@ -56,11 +78,11 @@ export class CertificateService {
             });
 
             if (!enrollments.length) {
-                throw new NotFoundException('No completed enrollments found');
+                throw new NotFoundException('No enrollments found');
             }
 
             // Transform data to include all required fields
-            const seriesData = enrollments.map(enrollment => {
+            let seriesData = enrollments.map(enrollment => {
                 const series = enrollment.series;
 
                 // Get course progress data for each course
@@ -72,7 +94,7 @@ export class CertificateService {
                         course_title: course.title,
                         course_start_date: course.created_at,
                         course_completion_date: courseProgress?.completed_at || null,
-                        course_status: courseProgress?.status || 'pending',
+                        course_status: courseProgress?.status ,
                         completion_percentage: courseProgress?.completion_percentage || 0,
                         is_completed: courseProgress?.is_completed || false,
                         progress_started_at: courseProgress?.started_at || null,
@@ -107,16 +129,53 @@ export class CertificateService {
                 };
             });
 
+            // Apply search filter if provided
+            if (search) {
+                seriesData = seriesData.filter(series =>
+                    series.series_title.toLowerCase().includes(search.toLowerCase()) ||
+                    series.courses.some(course =>
+                        course.course_title.toLowerCase().includes(search.toLowerCase())
+                    )
+                );
+            }
+
             // Flatten all courses from all series into a single array
-            const allCourses = seriesData.flatMap(series => series.courses);
+            let allCourses = seriesData.flatMap(series => series.courses);
+
+            // Apply course status filter if provided
+            if (course_status) {
+                allCourses = allCourses.filter(course => course.course_status === course_status);
+            }
+
+            // Apply pagination to courses
+            const totalCourses = allCourses.length;
+            const paginatedCourses = allCourses.slice(skip, skip + limit);
+
+            // Calculate pagination values
+            const totalPages = Math.ceil(totalCourses / limit);
+            const hasNextPage = page < totalPages;
+            const hasPreviousPage = page > 1;
 
             return {
                 success: true,
                 message: 'Course progress data retrieved successfully',
                 data: {
-                    total_series: seriesData.length,
-                    total_courses: allCourses.length,
-                    courses: allCourses
+                    courses: paginatedCourses,
+                    pagination: {
+                        total: totalCourses,
+                        page,
+                        limit,
+                        totalPages,
+                        hasNextPage,
+                        hasPreviousPage
+                    },
+                    summary: {
+                        total_series: seriesData.length,
+                        total_courses: totalCourses,
+                        completed_courses: allCourses.filter(course => course.is_completed).length,
+                        in_progress_courses: allCourses.filter(course => course.course_status === 'in_progress').length,
+                        pending_courses: allCourses.filter(course => course.course_status === 'pending').length
+                    }
                 }
             };
         } catch (error) {

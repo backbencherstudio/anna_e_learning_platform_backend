@@ -249,7 +249,7 @@ export class SeriesService {
             // Get file stats for single file
             const stat = fs.statSync(lessonFilePath);
             const fileSize = stat.size;
-           
+
 
             // Parse range header with better validation
             if (range) {
@@ -265,7 +265,7 @@ export class SeriesService {
 
                 const chunksize = (end - start) + 1;
                 const file = fs.createReadStream(lessonFilePath, { start, end });
-            
+
 
                 const head = {
                     'Content-Range': `bytes ${start}-${end}/${fileSize}`,
