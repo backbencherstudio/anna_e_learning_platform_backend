@@ -1,9 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SojebStorage } from 'src/common/lib/Disk/SojebStorage';
 import appConfig from 'src/config/app.config';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as crypto from 'crypto';
+import { spawn } from 'child_process';
+// Use packaged ffmpeg binary to avoid PATH issues
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg');
+const FFMPEG_PATH: string = ffmpegInstaller?.path || 'ffmpeg';
 import { SeriesResponse } from './interfaces/series-response.interface';
 import { VideoProgressData } from './types/video-progress.types';
 import { VideoProgressService } from './services/video-progress.service';
@@ -14,6 +21,9 @@ import { LessonProgressService } from './services/lesson-progress.service';
 @Injectable()
 export class SeriesService {
     private readonly logger = new Logger(SeriesService.name);
+    private static readonly DRM_TOKEN_EXPIRES_SECONDS = 60;
+    private static readonly STORAGE_ROOT = path.join(process.cwd(), 'public', 'storage');
+    private static readonly DRM_ROOT = path.join(SeriesService.STORAGE_ROOT, 'drm');
 
     constructor(
         private readonly prisma: PrismaService,
@@ -21,6 +31,7 @@ export class SeriesService {
         private readonly lessonUnlockService: LessonUnlockService,
         private readonly courseProgressService: CourseProgressService,
         private readonly lessonProgressService: LessonProgressService,
+        private readonly jwtService: JwtService,
     ) { }
 
     // ==================== MAIN SERIES METHODS ====================
@@ -155,6 +166,149 @@ export class SeriesService {
             this.logger.error(`Error fetching lesson ${lessonId}: ${error.message}`, error.stack);
             return this.createErrorResponse('Failed to fetch lesson', error.message);
         }
+    }
+
+    // ==================== DRM: HLS secured streaming helpers ====================
+
+    async createDrmToken(userId: string, lessonId: string): Promise<SeriesResponse<{ token: string; expiresIn: number }>> {
+        try {
+            // Reuse lesson access rule: must have lesson progress (unlocked)
+            const isViewed = await this.prisma.lessonProgress.findFirst({
+                where: { user_id: userId, lesson_id: lessonId, deleted_at: null },
+            });
+            if (!isViewed) return this.createErrorResponse('You can not view this lesson');
+
+            // Ensure lesson exists
+            const lesson = await this.prisma.lessonFile.findFirst({
+                where: { id: lessonId, deleted_at: null },
+                select: { id: true },
+            });
+            if (!lesson) return this.createErrorResponse('Lesson not found');
+
+            const expiresIn = SeriesService.DRM_TOKEN_EXPIRES_SECONDS;
+            const token = await this.jwtService.signAsync({ lessonId }, { expiresIn });
+            return { success: true, message: 'DRM token issued', data: { token, expiresIn } };
+        } catch (error) {
+            this.logger.error(`Error creating DRM token: ${error.message}`, error.stack);
+            return this.createErrorResponse('Failed to create DRM token', error.message);
+        }
+    }
+
+    async serveDrmPlaylist(userId: string, lessonId: string, res: any, drmToken: string): Promise<void> {
+        try {
+            const payload = await this.jwtService.verifyAsync(drmToken);
+            if (payload.lessonId !== lessonId) {
+                res.status(403).send('Invalid token');
+                return;
+            }
+            const dirPath = this.getDrmDir(lessonId);
+            // If not packaged yet, try to package from original lesson file
+            await this.ensureDrmPackaged(lessonId, userId, dirPath);
+            const filePath = path.join(dirPath, 'index.m3u8');
+            if (!fs.existsSync(filePath)) {
+                res.status(404).send('Playlist not found');
+                return;
+            }
+            res.sendFile(filePath);
+        } catch {
+            if (!res.headersSent) res.status(403).send('Invalid or expired token');
+        }
+    }
+
+    async serveDrmSegment(userId: string, lessonId: string, file: string, res: any, drmToken: string): Promise<void> {
+        try {
+            const payload = await this.jwtService.verifyAsync(drmToken);
+            if (payload.lessonId !== lessonId) {
+                res.status(403).send('Invalid token');
+                return;
+            }
+            const filePath = path.join(this.getDrmDir(lessonId), file);
+            if (!fs.existsSync(filePath)) {
+                res.status(404).send('Not found');
+                return;
+            }
+            res.sendFile(filePath);
+        } catch {
+            if (!res.headersSent) res.status(403).send('Invalid or expired token');
+        }
+    }
+
+    async serveDrmKey(userId: string, lessonId: string, res: any, drmToken: string): Promise<void> {
+        try {
+            const payload = await this.jwtService.verifyAsync(drmToken);
+            if (payload.lessonId !== lessonId) {
+                res.status(403).send('Invalid token');
+                return;
+            }
+            const keyFile = path.join(this.getDrmDir(lessonId), 'enc.key');
+            if (!fs.existsSync(keyFile)) {
+                res.status(404).send('Key not found');
+                return;
+            }
+            const key = fs.readFileSync(keyFile);
+            res.set('Content-Type', 'application/octet-stream');
+            res.send(key);
+        } catch {
+            if (!res.headersSent) res.status(403).send('Invalid or expired token');
+        }
+    }
+
+    private async ensureDrmPackaged(lessonId: string, userId: string, outDir: string): Promise<void> {
+        // If index exists, skip
+        const playlistPath = path.join(outDir, 'index.m3u8');
+        if (fs.existsSync(playlistPath)) return;
+
+        // Fetch lesson file to get source video path
+        const lesson = await this.prisma.lessonFile.findFirst({
+            where: { id: lessonId, deleted_at: null },
+            select: { url: true },
+        });
+        if (!lesson?.url) return; // nothing to package
+
+        const sourcePath = path.join(SeriesService.STORAGE_ROOT, 'lesson', 'file', lesson.url);
+        if (!fs.existsSync(sourcePath)) return;
+
+        fs.mkdirSync(outDir, { recursive: true });
+
+        // Generate AES-128 key
+        const key = crypto.randomBytes(16);
+        const keyFile = path.join(outDir, 'enc.key');
+        fs.writeFileSync(keyFile, key);
+
+        // Create key info file for ffmpeg
+        const keyUri = `/api/student/series/lessons/${lessonId}/drm/key`;
+        const keyInfoPath = path.join(outDir, 'enc.keyinfo');
+        fs.writeFileSync(keyInfoPath, `${keyUri}\n${keyFile}\n`);
+
+        // Run ffmpeg to generate encrypted HLS
+        await this.runFfmpeg(sourcePath, outDir, keyInfoPath, `/api/student/series/lessons/${lessonId}/drm/hls/`);
+    }
+
+    private getDrmDir(lessonId: string): string {
+        return path.join(SeriesService.DRM_ROOT, lessonId);
+    }
+
+    private runFfmpeg(input: string, outDir: string, keyInfoPath: string, baseUrl: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            const segPattern = path.join(outDir, 'seg%03d.ts');
+            const args = [
+                '-y', '-i', input,
+                '-codec', 'copy', '-map', '0',
+                '-f', 'hls',
+                '-hls_time', '6',
+                '-hls_list_size', '0',
+                '-hls_key_info_file', keyInfoPath,
+                '-hls_segment_filename', segPattern,
+                '-hls_base_url', baseUrl,
+                path.join(outDir, 'index.m3u8'),
+            ];
+            const ff = spawn(FFMPEG_PATH, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+            ff.stderr.on('data', (d) => {
+                try { this.logger.log('[ffmpeg] ' + d.toString()); } catch { }
+            });
+            ff.on('error', (e) => reject(e));
+            ff.on('close', (code) => code === 0 ? resolve() : reject(new Error('ffmpeg exited with ' + code)));
+        });
     }
 
     /**

@@ -105,6 +105,84 @@ export class SeriesController {
     return this.seriesService.markLessonAsViewed(userId, lessonId);
   }
 
+  // ==================== DRM: HLS secured endpoints ====================
+
+  @Post('lessons/:lessonId/drm/token')
+  @ApiOperation({ summary: 'Issue short-lived DRM token for lesson HLS access' })
+  async getDrmToken(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+  ): Promise<SeriesResponse<{ token: string; expiresIn: number }>> {
+    const userId = req.user.userId;
+    return this.seriesService.createDrmToken(userId, lessonId);
+  }
+
+  @Get('lessons/:lessonId/drm/playlist')
+  @ApiOperation({ summary: 'Serve DRM-protected HLS playlist (m3u8)' })
+  async drmPlaylist(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+    @Res() res: any,
+    @Headers('x-drm-token') drmToken: string,
+  ) {
+    const userId = req.user.userId;
+    this.setDrmCorsHeaders(res);
+    return this.seriesService.serveDrmPlaylist(userId, lessonId, res, drmToken);
+  }
+
+  @Options('lessons/:lessonId/drm/playlist')
+  async drmPlaylistOptions(@Res() res: any) {
+    this.setDrmCorsHeaders(res);
+    res.status(204).send();
+  }
+
+  @Get('lessons/:lessonId/drm/hls/:file')
+  @ApiOperation({ summary: 'Serve DRM-protected HLS segment' })
+  async drmSegment(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+    @Param('file') file: string,
+    @Res() res: any,
+    @Headers('x-drm-token') drmToken: string,
+  ) {
+    const userId = req.user.userId;
+    this.setDrmCorsHeaders(res);
+    return this.seriesService.serveDrmSegment(userId, lessonId, file, res, drmToken);
+  }
+
+  @Options('lessons/:lessonId/drm/hls/:file')
+  async drmSegmentOptions(@Res() res: any) {
+    this.setDrmCorsHeaders(res);
+    res.status(204).send();
+  }
+
+  @Get('lessons/:lessonId/drm/key')
+  @ApiOperation({ summary: 'Serve DRM encryption key for HLS (AES-128)' })
+  async drmKey(
+    @Req() req: any,
+    @Param('lessonId') lessonId: string,
+    @Res() res: any,
+    @Headers('x-drm-token') drmToken: string,
+  ) {
+    const userId = req.user.userId;
+    this.setDrmCorsHeaders(res);
+    return this.seriesService.serveDrmKey(userId, lessonId, res, drmToken);
+  }
+
+  @Options('lessons/:lessonId/drm/key')
+  async drmKeyOptions(@Res() res: any) {
+    this.setDrmCorsHeaders(res);
+    res.status(204).send();
+  }
+
+  private setDrmCorsHeaders(res: any) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, x-drm-token, Range, Content-Range, Content-Length, Content-Type');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  }
+
   @Post('lessons/:lessonId/progress')
   @ApiOperation({ summary: 'Update video progress and auto-complete lesson if 90%+ watched' })
   async updateVideoProgress(
