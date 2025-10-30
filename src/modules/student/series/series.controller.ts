@@ -71,17 +71,6 @@ export class SeriesController {
     return this.seriesService.findOneLesson(userId, lessonId);
   }
 
-  @Get('lessons/:lessonId/stream')
-  @ApiOperation({ summary: 'Stream lesson video' })
-  async streamLessonVideo(
-    @Req() req: any,
-    @Param('lessonId') lessonId: string,
-    @Res() res: any,
-    @Headers('range') range?: string,
-  ) {
-    const userId = req.user.userId;
-    return this.seriesService.streamLessonVideo(userId, lessonId, res, range);
-  }
 
   @Options('lessons/:lessonId/stream')
   @ApiOperation({ summary: 'Handle preflight request for video streaming' })

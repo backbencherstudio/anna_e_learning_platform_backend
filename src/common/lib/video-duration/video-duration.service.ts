@@ -214,6 +214,89 @@ export class VideoDurationService {
     }
 
     /**
+     * Calculate video resolution from file buffer
+     * @param fileBuffer - The video file buffer
+     * @param originalName - Original filename for extension detection
+     * @returns Promise<string> - Video resolution in format "1920x1080" or null
+     */
+    async calculateVideoResolution(fileBuffer: Buffer, originalName: string): Promise<string | null> {
+        try {
+            this.logger.log(`Starting video resolution calculation for: ${originalName}`);
+
+            // Validate buffer
+            if (!fileBuffer || fileBuffer.length === 0) {
+                this.logger.warn(`Empty or invalid buffer for file: ${originalName}`);
+                return null;
+            }
+
+            // Create a temporary file
+            const tempDir = os.tmpdir();
+            const tempFileName = `temp_video_${Date.now()}_${Math.random().toString(36).substring(7)}${path.extname(originalName)}`;
+            const tempFilePath = path.join(tempDir, tempFileName);
+
+            this.logger.log(`Creating temporary file for resolution: ${tempFilePath}`);
+
+            // Write buffer to temporary file
+            fs.writeFileSync(tempFilePath, fileBuffer);
+            this.logger.log(`Temporary file created successfully`);
+
+            try {
+                // Get video resolution using ffprobe
+                const resolution = await this.getVideoResolutionFromFile(tempFilePath);
+                this.logger.log(`FFprobe returned resolution: ${resolution}`);
+                return resolution;
+            } finally {
+                // Clean up temporary file
+                try {
+                    fs.unlinkSync(tempFilePath);
+                    this.logger.log(`Temporary file deleted: ${tempFilePath}`);
+                } catch (error) {
+                    this.logger.warn(`Failed to delete temporary file: ${tempFilePath}`, error);
+                }
+            }
+        } catch (error) {
+            this.logger.error(`Error calculating video resolution: ${error.message}`, error.stack);
+            return null;
+        }
+    }
+
+    /**
+     * Get video resolution from file path using ffprobe
+     * @param filePath - Path to the video file
+     * @returns Promise<string | null> - Resolution like "1920x1080" or null
+     */
+    private async getVideoResolutionFromFile(filePath: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            this.logger.log(`FFprobe starting for resolution: ${filePath}`);
+
+            ffmpeg.ffprobe(filePath, (err, metadata) => {
+                if (err) {
+                    this.logger.error(`FFprobe error: ${err.message}`, err.stack);
+                    resolve(null);
+                    return;
+                }
+
+                try {
+                    // Look for video stream to get resolution
+                    const videoStream = metadata.streams?.find(stream => stream.codec_type === 'video');
+
+                    if (videoStream && videoStream.width && videoStream.height) {
+                        const resolution = `${videoStream.width}x${videoStream.height}`;
+                        this.logger.log(`Video resolution: ${resolution}`);
+                        resolve(resolution);
+                    } else {
+                        this.logger.warn(`No video stream found or missing width/height`);
+                        resolve(null);
+                    }
+                } catch (error) {
+                    this.logger.error(`Error parsing resolution: ${error.message}`, error.stack);
+                    resolve(null);
+                }
+            });
+        });
+    }
+
+    /**
      * Estimate video length based on file size (very rough estimate)
      * @param fileSize - File size in bytes
      * @param fileName - Original file name

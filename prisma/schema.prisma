@@ -554,12 +554,14 @@ model LessonFile {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  title        String?
-  url          String?
-  doc          String?
-  kind         String  @default("video") // "image","video","pdf","slides"
-  alt          String?
-  video_length String? // Video length in format like "18m 44s" or "18 min 44 sec"
+  title            String?
+  url              String?
+  doc              String?
+  kind             String  @default("video") // "image","video","pdf","slides"
+  alt              String?
+  video_length     String? // Video length in format like "18m 44s" or "18 min 44 sec"
+  video_resolution String? // Video resolution in format like "1280x720"
+  video_qualities  Json? // Adaptive streaming qualities: { "480p": {...}, "720p": {...}, "1080p": {...} }
 
   course_id String?
   course    Course? @relation(fields: [course_id], references: [id], onDelete: Cascade)
