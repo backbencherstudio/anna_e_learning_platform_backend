@@ -312,171 +312,6 @@ export class SeriesService {
     }
 
     /**
-    * Stream lesson video with range support for video seeking
-    */
-    async streamLessonVideo(userId: string, lessonId: string, res: any, range?: string): Promise<void> {
-        try {
-            this.logger.log(`Streaming lesson video ${lessonId} for user: ${userId}`);
-
-            // Check if lesson is unlocked and user has access
-            const lessonProgress = await this.prisma.lessonProgress.findFirst({
-                where: {
-                    user_id: userId,
-                    lesson_id: lessonId,
-                    deleted_at: null,
-                },
-                include: {
-                    lesson: {
-                        select: {
-                            id: true,
-                            title: true,
-                            url: true,
-                            course: {
-                                select: {
-                                    id: true,
-                                    series: {
-                                        select: {
-                                            id: true,
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-
-            if (!lessonProgress) {
-                res.status(403).json({ error: 'You cannot access this lesson' });
-                return;
-            }
-
-            // Check if lesson is actually unlocked
-            if (!lessonProgress.lesson) {
-                res.status(404).json({ error: 'Lesson not found' });
-                return;
-            }
-
-            // Get lesson file details
-            const lesson = await this.prisma.lessonFile.findFirst({
-                where: { id: lessonId, deleted_at: null },
-                select: { url: true, title: true },
-            });
-
-            if (!lesson || !lesson.url) {
-                res.status(404).json({ error: 'Video file not found' });
-                return;
-            }
-
-            // Mark lesson as viewed
-            await this.lessonProgressService.markLessonAsViewed(userId, lessonId);
-
-            // Construct full file path - use the actual storage structure
-            const storageBasePath = path.join(process.cwd(), 'public', 'storage');
-            let lessonFilePath = path.join(storageBasePath, 'lesson', 'file', lesson.url);
-
-            // Determine content type based on file extension
-            const fileExtension = path.extname(lesson.url).toLowerCase();
-            const contentTypeMap = {
-                '.mp4': 'video/mp4',
-                '.webm': 'video/webm',
-                '.avi': 'video/x-msvideo',
-                '.mov': 'video/quicktime',
-                '.mkv': 'video/x-matroska',
-            };
-            const contentType = contentTypeMap[fileExtension] || 'video/mp4';
-
-            // Check if file exists as single file
-            if (!fs.existsSync(lessonFilePath)) {
-                // Check if it's a chunked file (look for .chunk-0)
-                const chunkedFilePath = lessonFilePath + '.chunk-0';
-                if (fs.existsSync(chunkedFilePath)) {
-                    // This is a chunked file - use chunked streaming
-                    this.logger.log(`Detected chunked video file: ${lesson.url}`);
-                    return await this.streamChunkedVideo(lessonFilePath, res, range, contentType);
-                } else {
-                    res.status(404).json({ error: 'Video file not found on server' });
-                    return;
-                }
-            }
-
-            // Get file stats for single file
-            const stat = fs.statSync(lessonFilePath);
-            const fileSize = stat.size;
-
-
-            // Parse range header with better validation
-            if (range) {
-                const parts = range.replace(/bytes=/, "").split("-");
-                const start = parseInt(parts[0], 10);
-                const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-                // Validate range
-                if (start >= fileSize || end >= fileSize || start > end) {
-                    res.status(416).json({ error: 'Range Not Satisfiable' });
-                    return;
-                }
-
-                const chunksize = (end - start) + 1;
-                const file = fs.createReadStream(lessonFilePath, { start, end });
-
-
-                const head = {
-                    'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-                    'Accept-Ranges': 'bytes',
-                    'Content-Length': chunksize,
-                    'Content-Type': contentType,
-                    // Security headers to prevent downloads
-                    'Content-Disposition': 'inline',
-                    'X-Content-Type-Options': 'nosniff',
-                    'X-Frame-Options': 'SAMEORIGIN',
-                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    // CORS headers for video streaming
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
-                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-                    'Cross-Origin-Resource-Policy': 'cross-origin',
-                };
-
-                res.writeHead(206, head);
-                file.pipe(res);
-                //fs.createReadStream(lessonFilePath).pipe(res);
-            } else {
-                const head = {
-                    'Content-Length': fileSize,
-                    'Content-Type': contentType,
-                    // Security headers for full file requests
-                    'Content-Disposition': 'inline',
-                    'X-Content-Type-Options': 'nosniff',
-                    'X-Frame-Options': 'SAMEORIGIN',
-                    'Cache-Control': 'private, no-cache, no-store, must-revalidate',
-                    'Pragma': 'no-cache',
-                    'Expires': '0',
-                    // CORS headers for video streaming
-                    'Access-Control-Allow-Origin': '*',
-                    'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
-                    'Access-Control-Allow-Headers': 'Range, Content-Range, Content-Length, Content-Type',
-                    'Access-Control-Expose-Headers': 'Content-Range, Content-Length, Accept-Ranges',
-                    'Cross-Origin-Resource-Policy': 'cross-origin',
-                };
-
-                res.writeHead(200, head);
-                fs.createReadStream(lessonFilePath).pipe(res);
-            }
-
-            this.logger.log(`Video streaming started for lesson ${lessonId}`);
-        } catch (error) {
-            this.logger.error(`Error streaming video: ${error.message}`, error.stack);
-            if (!res.headersSent) {
-                res.status(500).json({ error: 'Failed to stream video' });
-            }
-        }
-    }
-
-    /**
      * Handle chunked video file streaming
      */
     private async streamChunkedVideo(
@@ -1679,12 +1514,12 @@ export class SeriesService {
         };
 
         // Add file URLs
-        if (lessonWithContext.url) {
-            lessonWithContext['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonWithContext.url);
-        }
-        if (lessonWithContext.doc) {
-            lessonWithContext['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonWithContext.doc);
-        }
+        // if (lessonWithContext.url) {
+        //     lessonWithContext['file_url'] = SojebStorage.url(appConfig().storageUrl.lesson_file + lessonWithContext.url);
+        // }
+        // if (lessonWithContext.doc) {
+        //     lessonWithContext['doc_url'] = SojebStorage.url(appConfig().storageUrl.doc_file + lessonWithContext.doc);
+        // }
 
         // Get lesson progress for this user
         const progress = await this.prisma.lessonProgress.findFirst({

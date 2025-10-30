@@ -21,7 +21,7 @@ export class QuizService {
     const enrollmentFilter: any = {
       user_id: userId,
       deleted_at: null,
-      status: 'ACTIVE',
+      status: { in: ['ACTIVE', 'COMPLETED'] as any },
       payment_status: 'completed',
     };
     if (series_id) enrollmentFilter.series_id = series_id;
