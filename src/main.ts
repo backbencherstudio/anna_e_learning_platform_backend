@@ -44,6 +44,7 @@ async function bootstrap() {
       'Content-Type',
       'Accept',
       'Authorization',
+      'x-drm-token',
       'Cache-Control',
       'X-HTTP-Method-Override',
       'Range',

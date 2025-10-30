@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DRM HLS Test</title>
+    <style>
+      body {
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          Arial,
+          sans-serif;
+        margin: 24px;
+      }
+      .row {
+        margin-bottom: 12px;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+      input,
+      button,
+      textarea {
+        font-size: 14px;
+        padding: 8px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        width: auto;
+        cursor: pointer;
+      }
+      .inline {
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+      }
+      video {
+        width: 100%;
+        max-width: 960px;
+        height: auto;
+        background: #000;
+      }
+      .log {
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: #f6f8fa;
+        padding: 12px;
+        border-radius: 6px;
+        border: 1px solid #e5e7eb;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  </head>
+  <body>
+    <h1>DRM HLS Test</h1>
+
+    <div class="row">
+      <label for="baseUrl">API Base URL</label>
+      <input
+        id="baseUrl"
+        placeholder="http://localhost:4000"
+        value="http://localhost:4000"
+      />
+    </div>
+    <div class="row">
+      <label for="lessonId">Lesson ID</label>
+      <input
+        id="lessonId"
+        placeholder="uuid-of-lesson"
+        data-default-lesson-id=""
+      />
+    </div>
+    <div class="row">
+      <label for="authToken">Authorization (User JWT)</label>
+      <textarea
+        id="authToken"
+        rows="3"
+        placeholder="Bearer token from your app login"
+        data-default-token=""
+      ></textarea>
+    </div>
+    <div class="row inline">
+      <button id="btnToken">Get DRM Token</button>
+      <span id="tokenStatus"></span>
+    </div>
+
+    <div class="row inline">
+      <button id="btnPlay">Play</button>
+      <button id="btnStop">Stop</button>
+    </div>
+
+    <div class="row">
+      <video id="video" controls></video>
+    </div>
+
+    <div class="row">
+      <label>Logs</label>
+      <div id="logs" class="log"></div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const logs = $('logs');
+      const log = (m) => {
+        logs.textContent += `\n${new Date().toISOString()} ${m}`;
+        logs.scrollTop = logs.scrollHeight;
+      };
+
+      let drmToken = null;
+      let hls = null;
+
+      // Helpers to prefill defaults from URL or localStorage
+      function getQueryParam(name) {
+        const url = new URL(window.location.href);
+        return url.searchParams.get(name);
+      }
+      function loadDefaults() {
+        const qsLesson = getQueryParam('lessonId');
+        const qsToken = getQueryParam('token');
+        const lsLesson = localStorage.getItem('drm_lessonId');
+        const lsToken = localStorage.getItem('drm_authToken');
+        const attrLesson = $('lessonId').getAttribute('data-default-lesson-id');
+        const attrToken = $('authToken').getAttribute('data-default-token');
+
+        if (!$('lessonId').value) {
+          $('lessonId').value = qsLesson || lsLesson || attrLesson || '';
+        }
+        if (!$('authToken').value) {
+          $('authToken').value = qsToken || lsToken || attrToken || '';
+        }
+      }
+      function saveDefaults() {
+        const lessonId = $('lessonId').value.trim();
+        const auth = $('authToken').value.trim();
+        if (lessonId) localStorage.setItem('drm_lessonId', lessonId);
+        if (auth) localStorage.setItem('drm_authToken', auth);
+      }
+
+      async function getDrmToken() {
+        const base = $('baseUrl').value.replace(/\/$/, '');
+        const lessonId = $('lessonId').value.trim();
+        const auth = $('authToken').value.trim();
+        if (!lessonId) {
+          alert('Enter lessonId');
+          return;
+        }
+        if (!auth) {
+          alert('Paste Authorization token');
+          return;
+        }
+
+        const url = `${base}/api/student/series/lessons/${encodeURIComponent(lessonId)}/drm/token`;
+        try {
+          const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+              Authorization: auth.startsWith('Bearer ')
+                ? auth
+                : `Bearer ${auth}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          const data = await res.json();
+          if (!res.ok || !data.success)
+            throw new Error(data.message || res.statusText);
+          drmToken = data.data.token;
+          $('tokenStatus').textContent =
+            `Token OK (expires in ${data.data.expiresIn}s)`;
+          log('DRM token acquired');
+          saveDefaults();
+        } catch (e) {
+          drmToken = null;
+          $('tokenStatus').textContent = 'Token error';
+          log('Failed to get DRM token: ' + e.message);
+          alert('Failed to get DRM token: ' + e.message);
+        }
+      }
+
+      async function play() {
+        const base = $('baseUrl').value.replace(/\/$/, '');
+        const lessonId = $('lessonId').value.trim();
+        const auth = $('authToken').value.trim();
+        if (!lessonId) {
+          alert('Enter lessonId');
+          return;
+        }
+        if (!auth) {
+          alert('Paste Authorization token');
+          return;
+        }
+        if (!drmToken) {
+          await getDrmToken();
+          if (!drmToken) return;
+        }
+
+        const video = $('video');
+        const playlistUrl = `${base}/api/student/series/lessons/${encodeURIComponent(lessonId)}/drm/playlist`;
+
+        if (Hls.isSupported()) {
+          if (hls) {
+            hls.destroy();
+            hls = null;
+          }
+          hls = new Hls({
+            // Attach headers to all requests (playlist, segments, key)
+            xhrSetup: function (xhr, url) {
+              xhr.setRequestHeader(
+                'Authorization',
+                auth.startsWith('Bearer ') ? auth : `Bearer ${auth}`,
+              );
+              xhr.setRequestHeader('x-drm-token', drmToken);
+            },
+          });
+          hls.on(Hls.Events.ERROR, (evt, data) => {
+            log(
+              `HLS error: ${data.type} - ${data.details} - fatal=${data.fatal}`,
+            );
+            if (data.fatal) {
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  hls.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  hls.recoverMediaError();
+                  break;
+                default:
+                  hls.destroy();
+                  break;
+              }
+            }
+          });
+          hls.loadSource(playlistUrl);
+          hls.attachMedia(video);
+          hls.on(Hls.Events.MANIFEST_PARSED, function () {
+            video.play();
+            log('Playback started');
+          });
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          // Safari
+          video.src = playlistUrl;
+          // Note: Safari fetch requests from the video element cannot include custom headers.
+          // Use a proxy approach if needed for iOS/Safari.
+          video.addEventListener('loadedmetadata', () => {
+            video.play();
+          });
+          log('Attempting native HLS playback');
+        } else {
+          alert('HLS not supported in this browser');
+        }
+      }
+
+      function stop() {
+        const video = $('video');
+        if (hls) {
+          hls.destroy();
+          hls = null;
+        }
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        log('Stopped');
+      }
+
+      $('btnToken').addEventListener('click', getDrmToken);
+      $('btnPlay').addEventListener('click', play);
+      $('btnStop').addEventListener('click', stop);
+
+      // Prefill from query/localStorage and auto-fetch token on load
+      loadDefaults();
+      if ($('lessonId').value && $('authToken').value) {
+        getDrmToken();
+      }
+    </script>
+  </body>
+</html>
