@@ -4,6 +4,7 @@ import { SeriesService } from './series.service.refactored';
 import { SeriesController } from './series.controller';
 import { PrismaModule } from 'src/prisma/prisma.module';
 import { SeriesServicesModule } from './series-services.module';
+import appConfig from '../../../config/app.config';
 
 @Module({
   imports: [
@@ -11,8 +12,8 @@ import { SeriesServicesModule } from './series-services.module';
     SeriesServicesModule,
     JwtModule.registerAsync({
       useFactory: async () => ({
-        secret: (await import('src/config/app.config')).default().jwt.secret,
-        signOptions: { expiresIn: (await import('src/config/app.config')).default().jwt.expiry },
+        secret: appConfig().jwt.secret,
+        signOptions: { expiresIn: appConfig().jwt.expiry },
       }),
     }),
   ],
