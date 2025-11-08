@@ -1,4 +1,4 @@
-import dayjs from 'dayjs';
+import dayjs = require('dayjs');
 /**
  * Date helper
  */
@@ -102,9 +102,20 @@ export class DateHelper {
     const due = dayjs(dueDate);
     const now = currentDate ? dayjs(currentDate) : dayjs();
 
-    const diff = due.diff(now);
+    if (!due.isValid()) {
+      return {
+        days: 0,
+        hours: 0,
+        minutes: 0,
+        total: 0,
+        formatted: 'Invalid date',
+        isExpired: true
+      };
+    }
 
-    if (diff <= 0) {
+    const diffMs = due.diff(now);
+
+    if (diffMs <= 0) {
       return {
         days: 0,
         hours: 0,
@@ -115,21 +126,21 @@ export class DateHelper {
       };
     }
 
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    const days = due.diff(now, 'day');
+    const hours = due.diff(now, 'hour') % 24;
+    const minutes = due.diff(now, 'minute') % 60;
 
     let formatted = '';
     if (days > 0) formatted += `${days}d `;
     if (hours > 0) formatted += `${hours}h `;
     if (minutes > 0) formatted += `${minutes}m`;
-    if (!formatted) formatted = 'Less than 1 minute';  
+    if (!formatted) formatted = 'Less than 1 minute';
 
     return {
       days,
       hours,
       minutes,
-      total: diff,
+      total: diffMs,
       formatted: formatted.trim(),
       isExpired: false
     };

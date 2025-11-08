@@ -65,13 +65,7 @@ export class CheckoutService {
                         course_type: true,
                         note: true,
                         available_site: true,
-                        language: {
-                            select: {
-                                id: true,
-                                name: true,
-                                code: true,
-                            },
-                        },
+                        language: true,
                         courses: {
                             select: {
                                 id: true,

@@ -62,13 +62,7 @@ export class SeriesService {
                                 available_site: true,
                                 created_at: true,
                                 updated_at: true,
-                                language: {
-                                    select: {
-                                        id: true,
-                                        name: true,
-                                        code: true,
-                                    },
-                                },
+                                language: true,
                                 courses: {
                                     select: {
                                         id: true,
@@ -341,13 +335,7 @@ export class SeriesService {
                             available_site: true,
                             created_at: true,
                             updated_at: true,
-                            language: {
-                                select: {
-                                    id: true,
-                                    name: true,
-                                    code: true,
-                                },
-                            },
+                            language: true,
                             courses: {
                                 select: {
                                     id: true,

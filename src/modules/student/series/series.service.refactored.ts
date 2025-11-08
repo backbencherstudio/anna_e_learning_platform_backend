@@ -824,13 +824,7 @@ export class SeriesService {
                         available_site: true,
                         created_at: true,
                         updated_at: true,
-                        language: {
-                            select: {
-                                id: true,
-                                name: true,
-                                code: true,
-                            },
-                        },
+                        language: true,
                         courses: {
                             select: {
                                 id: true,
@@ -1005,6 +999,54 @@ export class SeriesService {
         // Add course progress and file URLs to each series
         for (const seriesItem of series) {
             if (seriesItem.courses && seriesItem.courses.length > 0) {
+                // Determine current course for this series
+                let currentCourse = null;
+
+                // First, try to find a course with status 'in_progress'
+                for (const course of seriesItem.courses) {
+                    const courseProgress = courseProgressMap.get(course.id) || null;
+                    if (courseProgress && courseProgress.status === 'in_progress') {
+                        currentCourse = course;
+                        break;
+                    }
+                }
+
+                // If no 'in_progress' course, find the first 'pending' course
+                if (!currentCourse) {
+                    for (const course of seriesItem.courses) {
+                        const courseProgress = courseProgressMap.get(course.id) || null;
+                        if (courseProgress && courseProgress.status === 'pending') {
+                            currentCourse = course;
+                            break;
+                        }
+                    }
+                }
+
+                // If still no current course, use the first course that is not completed
+                if (!currentCourse) {
+                    for (const course of seriesItem.courses) {
+                        const courseProgress = courseProgressMap.get(course.id) || null;
+                        if (!courseProgress || !courseProgress.is_completed) {
+                            currentCourse = course;
+                            break;
+                        }
+                    }
+                }
+
+                // If all courses are completed or no progress exists, use the first course
+                if (!currentCourse && seriesItem.courses.length > 0) {
+                    currentCourse = seriesItem.courses[0];
+                }
+
+                // Add current course name to series
+                if (currentCourse) {
+                    seriesItem['current_course_name'] = currentCourse.title;
+                    seriesItem['current_course_id'] = currentCourse.id;
+                } else {
+                    seriesItem['current_course_name'] = null;
+                    seriesItem['current_course_id'] = null;
+                }
+
                 for (const course of seriesItem.courses) {
                     // Add course progress
                     const courseProgress = courseProgressMap.get(course.id) || null;
@@ -1081,13 +1123,7 @@ export class SeriesService {
                         available_site: true,
                         created_at: true,
                         updated_at: true,
-                        language: {
-                            select: {
-                                id: true,
-                                name: true,
-                                code: true,
-                            },
-                        },
+                        language: true,
                         courses: {
                             select: {
                                 id: true,

@@ -465,9 +465,8 @@ model Language {
   updated_at DateTime  @updatedAt
   deleted_at DateTime?
 
-  name   String
-  code   String
-  series Series[]
+  name String
+  code String
 
   @@map("languages")
 }
@@ -495,9 +494,7 @@ model Series {
   available_site       Int?      @default(0)
   publication_status   String?   @default("DRAFT") // "DRAFT", "SCHEDULED", "PUBLISHED"
   scheduled_publish_at DateTime?
-
-  language_id String?
-  language    Language? @relation(fields: [language_id], references: [id])
+  language             String?
 
   courses         Course[]
   quizzes         Quiz[]

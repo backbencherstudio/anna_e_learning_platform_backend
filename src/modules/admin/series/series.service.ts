@@ -79,7 +79,7 @@ export class SeriesService {
             note: createSeriesDto.note,
             available_site: createSeriesDto.available_site || -1,
             total_site: createSeriesDto.available_site || -1,
-            language_id: createSeriesDto.language_id,
+            language: createSeriesDto.language,
           },
         });
 
@@ -174,13 +174,7 @@ export class SeriesService {
             total_site: true,
             created_at: true,
             updated_at: true,
-            language: {
-              select: {
-                id: true,
-                name: true,
-                code: true,
-              },
-            },
+            language: true,
             // courses: {
             //   select: {
             //     id: true,
