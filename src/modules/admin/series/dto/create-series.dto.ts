@@ -55,7 +55,7 @@ export class CreateSeriesDto {
     total_site?: number;
 
     @IsOptional() @IsString()
-    language_id?: string;
+    language?: string;
 
     @IsOptional()
     @IsArray()
