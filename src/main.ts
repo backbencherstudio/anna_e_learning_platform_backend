@@ -36,7 +36,7 @@ async function bootstrap() {
 
   // Configure CORS to handle preflight requests properly
   app.enableCors({
-    origin: ['*', 'http://localhost:3000', 'http://localhost:4000', 'http://127.0.0.1:5500', 'http://127.0.0.1:5501', 'http://31.97.209.156:3000', 'boraborsorkar.com', 'https://boraborsorkar.com', 'https://www.frontend.thewhiteeaglesacademy.com'],
+    origin: ['*', 'http://localhost:3000', 'http://localhost:4000', 'http://127.0.0.1:5500', 'http://127.0.0.1:5501', 'http://31.97.209.156:3000', 'boraborsorkar.com', 'thewhiteeaglesacademy.com', 'https://www.frontend.thewhiteeaglesacademy.com'],
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
       'Origin',
