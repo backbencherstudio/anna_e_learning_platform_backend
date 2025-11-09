@@ -205,6 +205,7 @@ export class TeacherSectionService {
           duration: updateDto.duration ?? exists.duration,
           release_date: updateDto.release_date ? new Date(updateDto.release_date) : exists.release_date,
           position: updateDto.position ?? exists.position,
+          category: updateDto.category ?? exists.category,
           status,
           is_released,
           release_status,
