@@ -19,8 +19,7 @@ export class Series {
     available_site?: number;
     total_site?: number;
 
-    language_id: string;
-    language?: any;
+    language?: string;
 
     // Relations
     courses?: any[];
