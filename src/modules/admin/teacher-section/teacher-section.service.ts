@@ -54,6 +54,7 @@ export class TeacherSectionService {
           duration: createDto.duration,
           release_date: createDto.release_date ? new Date(createDto.release_date) : undefined,
           position: createDto.position ?? 0,
+          category: createDto.category,
           status,
           is_released,
           release_status,

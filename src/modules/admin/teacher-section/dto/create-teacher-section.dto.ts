@@ -7,6 +7,10 @@ export class CreateTeacherSectionDto {
     @IsNotEmpty()
     section_type!: SectionType;
 
+    @IsOptional()
+    @IsString()
+    category?: string;
+
     @IsString()
     @IsNotEmpty()
     title!: string;
