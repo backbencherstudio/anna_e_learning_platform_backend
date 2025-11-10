@@ -63,7 +63,7 @@ export class ChunkUploadService {
     }
 
     /**
-     * Merge all chunks and create lesson file record
+     * Merge all chunks and create or update lesson file record
      */
     async mergeChunks(dto: MergeChunksDto) {
         try {
@@ -77,10 +77,65 @@ export class ChunkUploadService {
                 throw new NotFoundException(`Course with ID ${dto.courseId} not found`);
             }
 
+            // Check if updating existing lesson file
+            let existingLessonFile: any = null;
+            if (dto.lessonFileId) {
+                existingLessonFile = await this.prisma.lessonFile.findUnique({
+                    where: { id: dto.lessonFileId },
+                    select: {
+                        id: true,
+                        course_id: true,
+                        url: true,
+                        doc: true,
+                        video_qualities: true,
+                    },
+                });
+
+                if (!existingLessonFile) {
+                    throw new NotFoundException(`Lesson file with ID ${dto.lessonFileId} not found`);
+                }
+
+                // Validate that lesson file belongs to the same course
+                if (existingLessonFile.course_id !== dto.courseId) {
+                    throw new BadRequestException(
+                        `Lesson file ${dto.lessonFileId} does not belong to course ${dto.courseId}`
+                    );
+                }
+
+                this.logger.log(`🔄 Updating existing lesson file: ${dto.lessonFileId}`);
+            }
+
             // Generate final file name
             const title = dto.title || dto.fileName.split('.')[0];
             const finalFileName = StringHelper.generateLessonFileNameWithoutPosition(title, dto.fileName);
             const finalFilePath = appConfig().storageUrl.lesson_file + finalFileName;
+
+            // Delete old files before merging new chunks (if updating)
+            if (existingLessonFile) {
+                try {
+                    // Delete old video file (only if file name is different, otherwise it will be overwritten)
+                    if (existingLessonFile.url && existingLessonFile.url !== finalFileName) {
+                        await SojebStorage.delete(appConfig().storageUrl.lesson_file + existingLessonFile.url);
+                        this.logger.log(`✅ Deleted old video file: ${existingLessonFile.url}`);
+                    } else if (existingLessonFile.url === finalFileName) {
+                        this.logger.log(`⚠️ New file name matches old file name: ${finalFileName}. Old file will be overwritten.`);
+                    }
+
+                    // Always delete video quality files (they are separate files and will be regenerated if needed)
+                    if (existingLessonFile.video_qualities) {
+                        await this.deleteVideoQualityFiles(existingLessonFile.video_qualities, existingLessonFile.url);
+                    }
+
+                    // Delete doc file if exists
+                    if (existingLessonFile.doc) {
+                        await SojebStorage.delete(appConfig().storageUrl.doc_file + existingLessonFile.doc);
+                        this.logger.log(`✅ Deleted old doc file: ${existingLessonFile.doc}`);
+                    }
+                } catch (error) {
+                    this.logger.warn(`Failed to delete some old files: ${error.message}`);
+                    // Continue with update even if some files couldn't be deleted
+                }
+            }
 
             this.logger.log(`🔄 Starting to merge chunks for: ${dto.fileName}`);
 
@@ -107,25 +162,51 @@ export class ChunkUploadService {
                 }
             }
 
-            // Create lesson file record in database
+            // Create or update lesson file record in database
             const lessonFile = await this.prisma.$transaction(async (prisma) => {
-                const result = await prisma.lessonFile.create({
-                    data: {
-                        course_id: dto.courseId,
-                        title: title,
-                        url: finalFileName,
-                        kind: kind,
-                        alt: dto.fileName,
-                        video_length: videoLength,
-                    },
-                });
+                if (existingLessonFile) {
+                    // Update existing record
+                    const result = await prisma.lessonFile.update({
+                        where: { id: dto.lessonFileId },
+                        data: {
+                            title: title,
+                            url: finalFileName,
+                            kind: kind,
+                            alt: dto.fileName,
+                            video_length: videoLength,
+                            video_resolution: null, // Clear old resolution
+                            video_qualities: null, // Clear old qualities
+                        },
+                    });
 
-                // Update course/series video length
-                if (videoLength) {
-                    await this.updateCourseAndSeriesLength(dto.courseId, course.series_id, videoLength, prisma);
+                    // Update course/series video length
+                    if (videoLength) {
+                        await this.updateCourseAndSeriesLength(dto.courseId, course.series_id, videoLength, prisma);
+                    }
+
+                    this.logger.log(`✅ Lesson file updated: ${result.id} - ${finalFileName}`);
+                    return result;
+                } else {
+                    // Create new record
+                    const result = await prisma.lessonFile.create({
+                        data: {
+                            course_id: dto.courseId,
+                            title: title,
+                            url: finalFileName,
+                            kind: kind,
+                            alt: dto.fileName,
+                            video_length: videoLength,
+                        },
+                    });
+
+                    // Update course/series video length
+                    if (videoLength) {
+                        await this.updateCourseAndSeriesLength(dto.courseId, course.series_id, videoLength, prisma);
+                    }
+
+                    this.logger.log(`✅ Lesson file created: ${result.id} - ${finalFileName}`);
+                    return result;
                 }
-
-                return result;
             });
 
             // Clean up temporary chunk files
@@ -134,11 +215,12 @@ export class ChunkUploadService {
             // Get file URL
             const fileUrl = SojebStorage.url(finalFilePath);
 
-            this.logger.log(`🎉 Lesson file created successfully: ${lessonFile.id} - ${finalFileName}`);
+            const action = existingLessonFile ? 'updated' : 'created';
+            this.logger.log(`🎉 Lesson file ${action} successfully: ${lessonFile.id} - ${finalFileName}`);
 
             return {
                 success: true,
-                message: 'Chunks merged and lesson file created successfully',
+                message: `Chunks merged and lesson file ${action} successfully`,
                 lessonFile: {
                     id: lessonFile.id,
                     title: lessonFile.title,
@@ -158,7 +240,7 @@ export class ChunkUploadService {
             // Clean up chunks on error
             this.cleanupChunks(dto.fileName);
 
-            if (error instanceof NotFoundException) {
+            if (error instanceof NotFoundException || error instanceof BadRequestException) {
                 throw error;
             }
 
@@ -252,6 +334,40 @@ export class ChunkUploadService {
         } catch (error) {
             this.logger.error(`Failed to abort chunk upload: ${error.message}`, error.stack);
             throw new BadRequestException(`Failed to abort chunk upload: ${error.message}`);
+        }
+    }
+
+    /**
+     * Delete video quality files from storage
+     */
+    private async deleteVideoQualityFiles(videoQualities: any, originalUrl?: string): Promise<void> {
+        if (!videoQualities || typeof videoQualities !== 'object') {
+            return;
+        }
+
+        try {
+            for (const [quality, data] of Object.entries(videoQualities)) {
+                if (data && typeof data === 'object' && 'url' in data) {
+                    const qualityUrl = (data as any).url;
+                    if (qualityUrl) {
+                        // Skip if this is the original quality and URL matches the main file URL
+                        // (to avoid deleting the main file which is already handled separately)
+                        if (quality === 'original' && originalUrl && qualityUrl === originalUrl) {
+                            continue;
+                        }
+
+                        const qualityFilePath = appConfig().storageUrl.lesson_file + qualityUrl;
+                        try {
+                            await SojebStorage.delete(qualityFilePath);
+                            this.logger.log(`✅ Deleted quality file: ${quality} - ${qualityUrl}`);
+                        } catch (error) {
+                            this.logger.warn(`Failed to delete quality file ${quality} (${qualityUrl}): ${error.message}`);
+                        }
+                    }
+                }
+            }
+        } catch (error) {
+            this.logger.error(`Error deleting video quality files: ${error.message}`);
         }
     }
 

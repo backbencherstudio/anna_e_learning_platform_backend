@@ -70,24 +70,24 @@ export class UploadController {
     @Post('chunk')
     @HttpCode(HttpStatus.OK)
     @UseInterceptors(FileInterceptor('chunk'))
-    @ApiOperation({ summary: 'Upload a chunk of a large file' })
-    @ApiConsumes('multipart/form-data')
+    async uploadChunk(
+        @UploadedFile() chunk: Express.Multer.File,
+        @Body() dto: UploadChunkDto,
+    ) {
+        return this.chunkUploadService.saveChunk(chunk, dto);
+    }
+
+    @Post('chunk/merge')
+    @HttpCode(HttpStatus.OK)
+    @ApiOperation({
+        summary: 'Merge all chunks and create or update lesson file record',
+        description: 'If lessonFileId is provided, deletes old video files and updates the existing record. Otherwise, creates a new lesson file record.'
+    })
     @ApiBody({
         schema: {
             type: 'object',
+            required: ['fileName', 'courseId', 'fileType', 'fileSize'],
             properties: {
-                chunk: {
-                    type: 'string',
-                    format: 'binary',
-                },
-                index: {
-                    type: 'number',
-                    description: 'Chunk index (0-based)',
-                },
-                totalChunks: {
-                    type: 'number',
-                    description: 'Total number of chunks',
-                },
                 fileName: {
                     type: 'string',
                     description: 'Original file name',
@@ -100,32 +100,27 @@ export class UploadController {
                     type: 'string',
                     description: 'File MIME type',
                 },
+                fileSize: {
+                    type: 'number',
+                    description: 'Total file size in bytes',
+                },
+                title: {
+                    type: 'string',
+                    description: 'Optional title for the lesson file',
+                },
+                lessonFileId: {
+                    type: 'string',
+                    description: 'Optional lesson file ID to update existing video. If provided, old files will be deleted and record will be updated.',
+                },
             },
         },
     })
-    @ApiResponse({ status: 200, description: 'Chunk uploaded successfully' })
-    @ApiResponse({ status: 400, description: 'Invalid request data' })
-    async uploadChunk(
-        @UploadedFile() chunk: Express.Multer.File,
-        @Body() dto: UploadChunkDto,
-    ) {
-        return this.chunkUploadService.saveChunk(chunk, dto);
-    }
-
-    @Post('chunk/merge')
-    @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Merge all chunks and create lesson file record' })
-    @ApiResponse({ status: 200, description: 'Chunks merged successfully' })
-    @ApiResponse({ status: 400, description: 'Invalid request data' })
     async mergeChunks(@Body() dto: MergeChunksDto) {
         return this.chunkUploadService.mergeChunks(dto);
     }
 
     @Post('chunk/abort')
     @HttpCode(HttpStatus.OK)
-    @ApiOperation({ summary: 'Abort chunk upload and cleanup' })
-    @ApiResponse({ status: 200, description: 'Chunks cleaned up successfully' })
-    @ApiResponse({ status: 400, description: 'Invalid request data' })
     async abortChunkUpload(@Body() dto: AbortChunkUploadDto) {
         return this.chunkUploadService.abortChunkUpload(dto);
     }

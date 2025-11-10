@@ -23,5 +23,9 @@ export class MergeChunksDto {
     @IsString()
     @IsOptional()
     title?: string;
+
+    @IsString()
+    @IsOptional()
+    lessonFileId?: string;
 }
 
