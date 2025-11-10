@@ -8,12 +8,13 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { memoryStorage } from 'multer';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthService } from './auth.service';
@@ -24,11 +25,29 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { AuthGuard } from '@nestjs/passport';
 import { JwtService } from '@nestjs/jwt';
+import appConfig from '../../config/app.config';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService, private jwtService: JwtService) { }
+
+  private getClientUrl(): string {
+    return appConfig().app.client_app_url || 'http://localhost:3000';
+  }
+
+  private redirectToCallback(res: Response, token?: string, error?: string): void {
+    const clientUrl = this.getClientUrl();
+    let redirectUrl = `${clientUrl}/auth/callback`;
+
+    if (token) {
+      redirectUrl += `?token=${encodeURIComponent(token)}&success=true`;
+    } else if (error) {
+      redirectUrl += `?error=${encodeURIComponent(error)}`;
+    }
+
+    res.redirect(redirectUrl);
+  }
 
   @ApiOperation({ summary: 'Get user details' })
   @ApiBearerAuth()
@@ -134,6 +153,30 @@ export class AuthController {
     return HttpStatus.OK;
   }
 
+  // @ApiOperation({ summary: 'Google OAuth callback - stores user data and returns JWT token' })
+  // @Get('google/redirect')
+  // @UseGuards(AuthGuard('google'))
+  // async googleLoginRedirect(@Req() req: Request, @Res() res: Response): Promise<void> {
+  //   try {
+  //     const user = req.user as any;
+
+  //     if (!user) {
+  //       this.redirectToCallback(res, undefined, 'Authentication failed');
+  //       return;
+  //     }
+
+  //     // Generate JWT token
+  //     const payload = { sub: user.id, email: user.email };
+  //     const token = this.jwtService.sign(payload);
+
+  //     // Redirect to frontend with token in query parameters
+  //     this.redirectToCallback(res, token);
+  //   } catch (error) {
+  //     const errorMessage = error.message || 'Google login failed';
+  //     this.redirectToCallback(res, undefined, errorMessage);
+  //   }
+  // }
+
   @ApiOperation({ summary: 'Google OAuth callback - stores user data and returns JWT token' })
   @Get('google/redirect')
   @UseGuards(AuthGuard('google'))
@@ -189,45 +232,24 @@ export class AuthController {
   @ApiOperation({ summary: 'Facebook OAuth callback - stores user data and returns JWT token' })
   @Get('facebook/redirect')
   @UseGuards(AuthGuard('facebook'))
-  async facebookLoginRedirect(@Req() req: Request): Promise<any> {
+  async facebookLoginRedirect(@Req() req: Request, @Res() res: Response): Promise<void> {
     try {
       const user = req.user as any;
 
       if (!user) {
-        throw new HttpException('Authentication failed', HttpStatus.UNAUTHORIZED);
+        this.redirectToCallback(res, undefined, 'Authentication failed');
+        return;
       }
 
       // Generate JWT token
       const payload = { sub: user.id, email: user.email };
       const token = this.jwtService.sign(payload);
 
-      // Return user data along with token
-      return {
-        success: true,
-        message: 'Facebook login successful',
-        data: {
-          user: {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            avatar: user.avatar,
-            type: user.type,
-            approved_at: user.approved_at,
-            created_at: user.created_at,
-          },
-          authorization: {
-            token: token,
-            type: 'bearer',
-          }
-        }
-      };
+      // Redirect to frontend with token in query parameters
+      this.redirectToCallback(res, token);
     } catch (error) {
-      return {
-        success: false,
-        message: error.message || 'Facebook login failed',
-      };
+      const errorMessage = error.message || 'Facebook login failed';
+      this.redirectToCallback(res, undefined, errorMessage);
     }
   }
 

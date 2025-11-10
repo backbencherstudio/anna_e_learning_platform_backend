@@ -86,7 +86,6 @@ export class SeriesController {
     const videoFile = files.videoFile?.[0];
     const docFile = files.docFile?.[0];
 
-    // Check for large video files (>100MB) and suggest MinIO upload
     // if (videoFile && videoFile.size > 100 * 1024 * 1024) {
     //   return {
     //     success: true,
