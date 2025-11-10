@@ -19,11 +19,10 @@ export class CheckoutService {
                     { description: { contains: search, mode: 'insensitive' as any } },
                 ],
             } : {};
-
+            where.visibility = 'PUBLISHED';
             if (type) {
                 where.course_type = type;
             }
-
             // Get user enrollments in one query if userId is provided
             let userEnrollments: any[] = [];
             if (userId) {

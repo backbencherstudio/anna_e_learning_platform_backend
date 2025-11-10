@@ -9,9 +9,8 @@ export class PaymentTransactionService {
   async findAll(user_id?: string) {
     try {
       const userDetails = await UserRepository.getUserDetails(user_id);
-
       const whereClause = {};
-      if (userDetails.type == 'vendor') {
+      if (userDetails.type == 'student') {
         whereClause['user_id'] = user_id;
       }
 

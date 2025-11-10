@@ -86,39 +86,46 @@ export class SeriesController {
     const videoFile = files.videoFile?.[0];
     const docFile = files.docFile?.[0];
 
-    // Check for large video files (>100MB) and suggest MinIO upload
-    // if (videoFile && videoFile.size > 100 * 1024 * 1024) {
-    //   return {
-    //     success: true,
-    //     message: 'Large file detected. Use MinIO upload for better performance.',
-    //     data: {
-    //       videoFile: {
-    //         originalname: videoFile.originalname,
-    //         size: videoFile.size,
-    //         sizeInMB: Math.round(videoFile.size / 1024 / 1024),
-    //         mimetype: videoFile.mimetype,
-    //         status: 'requires_minio_upload'
-    //       },
-    //       docFile: docFile ? {
-    //         originalname: docFile.originalname,
-    //         size: docFile.size,
-    //         mimetype: docFile.mimetype,
-    //         sizeInMB: Math.round(docFile.size / 1024 / 1024)
-    //       } : null,
-    //       recommendation: 'Use MinIO direct upload for files larger than 100MB',
-    //       endpoints: {
-    //         presignedUrl: '/api/admin/upload/presigned-url',
-    //         completeUpload: '/api/admin/upload/complete-upload',
-    //         testConnection: '/api/admin/upload/test-connection'
-    //       },
-    //       instructions: {
-    //         step1: 'Call POST /api/admin/upload/presigned-url with file details',
-    //         step2: 'Upload file directly to the returned presigned URL',
-    //         step3: 'Call POST /api/admin/upload/complete-upload to finalize'
-    //       }
-    //     },
-    //   };
-    // }
+    // Check if file size exceeds threshold (100MB) for chunk upload
+    const CHUNK_UPLOAD_THRESHOLD = 100 * 1024 * 1024; // 100MB
+
+    if (videoFile && videoFile.size > CHUNK_UPLOAD_THRESHOLD) {
+      return {
+        success: true,
+        message: 'Large file detected. Use chunk upload for better performance.',
+        requiresChunkUpload: true,
+        data: {
+          videoFile: {
+            originalname: videoFile.originalname,
+            size: videoFile.size,
+            sizeInMB: Math.round(videoFile.size / 1024 / 1024),
+            mimetype: videoFile.mimetype,
+            status: 'requires_chunk_upload'
+          },
+          docFile: docFile ? {
+            originalname: docFile.originalname,
+            size: docFile.size,
+            mimetype: docFile.mimetype,
+            sizeInMB: Math.round(docFile.size / 1024 / 1024)
+          } : null,
+          recommendation: 'Use chunk upload for files larger than 100MB',
+          endpoints: {
+            uploadChunk: '/api/admin/upload/chunk',
+            mergeChunks: '/api/admin/upload/chunk/merge',
+            abortUpload: '/api/admin/upload/chunk/abort'
+          },
+          instructions: {
+            step1: 'Split file into chunks (e.g., 5MB per chunk)',
+            step2: 'Upload each chunk sequentially to POST /api/admin/upload/chunk with FormData (chunk, index, totalChunks, fileName, courseId, fileType)',
+            step3: 'After all chunks uploaded, call POST /api/admin/upload/chunk/merge to combine chunks and create lesson file record'
+          },
+          chunkSize: {
+            recommended: 5 * 1024 * 1024, // 5MB
+            unit: 'bytes'
+          }
+        },
+      };
+    }
 
     // For smaller files, process normally
     return this.seriesService.createLessonFile(createLessonFileDto, {

@@ -10,8 +10,8 @@ import { Request } from 'express';
 @ApiBearerAuth()
 @ApiTags('Payment transaction')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
-@Controller('admin/payment-transaction')
+//@Roles(Role.ADMIN, Role.STUDENT)
+@Controller('payment-transaction')
 export class PaymentTransactionController {
   constructor(
     private readonly paymentTransactionService: PaymentTransactionService,
