@@ -500,6 +500,8 @@ export class SeriesService {
           url: true,
           doc: true,
           video_length: true,
+          video_resolution: true,
+          video_qualities: true,
           created_at: true,
           updated_at: true,
           course: {

@@ -1,0 +1,499 @@
+<!doctype html>
+<!--
+    Chunk Upload Test Page
+    
+    How to use:
+    1. Start your backend server (default: http://localhost:4000)
+    2. Open this file in a browser: http://localhost:4000/public/client/chunk-upload-test.html
+    3. Select a file (video or document, 2GB+ supported)
+    4. Enter Course ID (pre-filled)
+    5. Optionally enter a title
+    6. Set chunk size (default: 5MB, recommended for large files)
+    7. Click "Upload File"
+    8. Watch the progress as chunks are uploaded
+    9. The file will be merged and lesson file created automatically
+    
+    Features:
+    - Supports files larger than 2GB
+    - Real-time progress tracking
+    - Chunk-by-chunk upload with retry capability
+    - Automatic merge after all chunks uploaded
+    - Abort functionality to cancel upload
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chunk Upload Test</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        padding: 20px;
+      }
+
+      .container {
+        background: white;
+        border-radius: 20px;
+        padding: 40px;
+        max-width: 600px;
+        width: 100%;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+
+      h1 {
+        color: #333;
+        margin-bottom: 30px;
+        text-align: center;
+        font-size: 28px;
+      }
+
+      .form-group {
+        margin-bottom: 20px;
+      }
+
+      label {
+        display: block;
+        margin-bottom: 8px;
+        color: #555;
+        font-weight: 600;
+      }
+
+      input[type='file'] {
+        width: 100%;
+        padding: 12px;
+        border: 2px dashed #667eea;
+        border-radius: 10px;
+        background: #f8f9fa;
+        cursor: pointer;
+        font-size: 14px;
+      }
+
+      input[type='text'] {
+        width: 100%;
+        padding: 12px;
+        border: 2px solid #e0e0e0;
+        border-radius: 8px;
+        font-size: 14px;
+        transition: border-color 0.3s;
+      }
+
+      input[type='text']:focus {
+        outline: none;
+        border-color: #667eea;
+      }
+
+      button {
+        width: 100%;
+        padding: 14px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          transform 0.2s,
+          box-shadow 0.2s;
+        margin-top: 10px;
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+      }
+
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .progress-container {
+        margin-top: 30px;
+        display: none;
+      }
+
+      .progress-container.active {
+        display: block;
+      }
+
+      .progress-bar {
+        width: 100%;
+        height: 30px;
+        background: #e0e0e0;
+        border-radius: 15px;
+        overflow: hidden;
+        margin-bottom: 10px;
+      }
+
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        width: 0%;
+        transition: width 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 12px;
+      }
+
+      .progress-info {
+        text-align: center;
+        color: #666;
+        font-size: 14px;
+        margin-bottom: 10px;
+      }
+
+      .log {
+        margin-top: 20px;
+        padding: 15px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        max-height: 200px;
+        overflow-y: auto;
+        font-size: 12px;
+        font-family: 'Courier New', monospace;
+      }
+
+      .log-item {
+        margin-bottom: 5px;
+        padding: 5px;
+        border-radius: 4px;
+      }
+
+      .log-item.success {
+        background: #d4edda;
+        color: #155724;
+      }
+
+      .log-item.error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+
+      .log-item.info {
+        background: #d1ecf1;
+        color: #0c5460;
+      }
+
+      .chunk-size-input {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .chunk-size-input input {
+        flex: 1;
+      }
+
+      .chunk-size-input span {
+        color: #666;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>📤 Chunk Upload Test</h1>
+
+      <div class="form-group">
+        <label for="fileInput">Select File:</label>
+        <input
+          type="file"
+          id="fileInput"
+          accept="video/*,application/pdf,.doc,.docx"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="courseId">Course ID:</label>
+        <input
+          type="text"
+          id="courseId"
+          value="cmh76dhem0002wsz4eisywyjt"
+          placeholder="Enter course ID"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="title">Title (Optional):</label>
+        <input type="text" id="title" placeholder="Enter lesson title" />
+      </div>
+
+      <div class="form-group">
+        <label>Chunk Size:</label>
+        <div class="chunk-size-input">
+          <input type="number" id="chunkSize" value="5" min="1" max="50" />
+          <span>MB (Recommended: 5MB)</span>
+        </div>
+      </div>
+
+      <button id="uploadBtn" onclick="startUpload()">Upload File</button>
+      <button
+        id="abortBtn"
+        onclick="abortUpload()"
+        disabled
+        style="background: #dc3545; margin-top: 10px"
+      >
+        Abort Upload
+      </button>
+
+      <div class="progress-container" id="progressContainer">
+        <div class="progress-info" id="progressInfo">Preparing upload...</div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill">0%</div>
+        </div>
+      </div>
+
+      <div class="log" id="log"></div>
+    </div>
+
+    <script>
+      // Configuration - Update these if needed
+      const API_BASE_URL = 'http://localhost:4000/api'; // API base URL
+      const TOKEN =
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6ImFkbWluQGdtYWlsLmNvbSIsInN1YiI6ImNtZ3lsdXJoaDAwMDB3czA4NTEzZmIzZmkiLCJpYXQiOjE3NjI3NDgzMzgsImV4cCI6MTc2MjgzNDczOH0.ocjtldc4Mos0lLEyorAGPBo2HG3PbU-S-qGTQLEyh4E';
+
+      let currentFileName = null;
+      let isUploading = false;
+
+      console.log('API Base URL:', API_BASE_URL);
+
+      function addLog(message, type = 'info') {
+        const log = document.getElementById('log');
+        const item = document.createElement('div');
+        item.className = `log-item ${type}`;
+        item.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+        log.appendChild(item);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      function updateProgress(current, total, message) {
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.getElementById('progressFill');
+        const progressInfo = document.getElementById('progressInfo');
+
+        progressContainer.classList.add('active');
+        const percentage = Math.round((current / total) * 100);
+        progressFill.style.width = percentage + '%';
+        progressFill.textContent = percentage + '%';
+        progressInfo.textContent =
+          message || `Uploading: ${current}/${total} chunks (${percentage}%)`;
+      }
+
+      async function uploadVideoInChunks(file) {
+        const courseId = document.getElementById('courseId').value;
+        const title = document.getElementById('title').value;
+        const chunkSizeMB =
+          parseInt(document.getElementById('chunkSize').value) || 5;
+        const chunkSize = chunkSizeMB * 1024 * 1024; // Convert MB to bytes
+        const totalChunks = Math.ceil(file.size / chunkSize);
+
+        currentFileName = file.name;
+        isUploading = true;
+        document.getElementById('uploadBtn').disabled = true;
+        document.getElementById('abortBtn').disabled = false;
+
+        addLog(
+          `Starting upload: ${file.name} (${(file.size / 1024 / 1024).toFixed(2)}MB)`,
+          'info',
+        );
+        addLog(
+          `Total chunks: ${totalChunks} (${chunkSizeMB}MB per chunk)`,
+          'info',
+        );
+
+        try {
+          // Upload chunks sequentially
+          for (let i = 0; i < totalChunks; i++) {
+            if (!isUploading) {
+              addLog('Upload aborted by user', 'error');
+              return;
+            }
+
+            const start = i * chunkSize;
+            const end = Math.min(file.size, start + chunkSize);
+            const chunk = file.slice(start, end);
+
+            const formData = new FormData();
+            formData.append('chunk', chunk, file.name);
+            formData.append('index', i.toString());
+            formData.append('totalChunks', totalChunks.toString());
+            formData.append('fileName', file.name);
+            formData.append('courseId', courseId);
+            formData.append(
+              'fileType',
+              file.type || 'application/octet-stream',
+            );
+
+            const response = await fetch(`${API_BASE_URL}/admin/upload/chunk`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${TOKEN}`,
+              },
+              body: formData,
+            });
+
+            if (!response.ok) {
+              const error = await response.json();
+              throw new Error(
+                error.message || `Failed to upload chunk ${i + 1}`,
+              );
+            }
+
+            const result = await response.json();
+            updateProgress(
+              i + 1,
+              totalChunks,
+              `Chunk ${i + 1}/${totalChunks} uploaded`,
+            );
+            addLog(
+              `✅ Chunk ${i + 1}/${totalChunks} uploaded (${(chunk.size / 1024 / 1024).toFixed(2)}MB)`,
+              'success',
+            );
+          }
+
+          // All chunks uploaded, now merge
+          addLog('All chunks uploaded. Merging...', 'info');
+          updateProgress(totalChunks, totalChunks, 'Merging chunks...');
+
+          const mergeResponse = await fetch(
+            `${API_BASE_URL}/admin/upload/chunk/merge`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${TOKEN}`,
+              },
+              body: JSON.stringify({
+                fileName: file.name,
+                courseId: courseId,
+                fileType: file.type || 'application/octet-stream',
+                fileSize: file.size,
+                title: title || undefined,
+              }),
+            },
+          );
+
+          if (!mergeResponse.ok) {
+            const error = await mergeResponse.json();
+            throw new Error(error.message || 'Failed to merge chunks');
+          }
+
+          const mergeResult = await mergeResponse.json();
+          addLog(
+            '🎉 All chunks merged and lesson file created successfully!',
+            'success',
+          );
+          addLog(`Lesson File ID: ${mergeResult.lessonFile?.id}`, 'info');
+          addLog(`File URL: ${mergeResult.lessonFile?.file_url}`, 'info');
+          updateProgress(
+            totalChunks,
+            totalChunks,
+            'Upload completed successfully!',
+          );
+
+          // Reset UI
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('abortBtn').disabled = true;
+          isUploading = false;
+          currentFileName = null;
+        } catch (error) {
+          addLog(`❌ Error: ${error.message}`, 'error');
+          updateProgress(0, totalChunks, 'Upload failed');
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('abortBtn').disabled = true;
+          isUploading = false;
+        }
+      }
+
+      async function abortUpload() {
+        if (!currentFileName || !isUploading) {
+          return;
+        }
+
+        try {
+          const response = await fetch(
+            `${API_BASE_URL}/admin/upload/chunk/abort`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${TOKEN}`,
+              },
+              body: JSON.stringify({
+                fileName: currentFileName,
+              }),
+            },
+          );
+
+          if (response.ok) {
+            addLog('Upload aborted and chunks cleaned up', 'info');
+          } else {
+            addLog('Failed to abort upload', 'error');
+          }
+        } catch (error) {
+          addLog(`Error aborting upload: ${error.message}`, 'error');
+        } finally {
+          isUploading = false;
+          currentFileName = null;
+          document.getElementById('uploadBtn').disabled = false;
+          document.getElementById('abortBtn').disabled = true;
+          updateProgress(0, 100, 'Upload aborted');
+        }
+      }
+
+      function startUpload() {
+        const fileInput = document.getElementById('fileInput');
+        const courseId = document.getElementById('courseId').value;
+
+        if (!fileInput.files || fileInput.files.length === 0) {
+          alert('Please select a file');
+          return;
+        }
+
+        if (!courseId) {
+          alert('Please enter a course ID');
+          return;
+        }
+
+        const file = fileInput.files[0];
+        uploadVideoInChunks(file);
+      }
+
+      // Allow Enter key to trigger upload
+      document
+        .getElementById('courseId')
+        .addEventListener('keypress', function (e) {
+          if (e.key === 'Enter') {
+            startUpload();
+          }
+        });
+
+      // Show file info when selected
+      document
+        .getElementById('fileInput')
+        .addEventListener('change', function (e) {
+          if (e.target.files && e.target.files.length > 0) {
+            const file = e.target.files[0];
+            const fileSizeMB = (file.size / 1024 / 1024).toFixed(2);
+            addLog(`File selected: ${file.name} (${fileSizeMB}MB)`, 'info');
+          }
+        });
+    </script>
+  </body>
+</html>
