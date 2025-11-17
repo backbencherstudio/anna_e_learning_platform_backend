@@ -151,11 +151,8 @@ export class ChunkUploadService {
             let videoLength: string | null = null;
             if (kind === 'video' && this.videoDurationService.isVideoFile(dto.fileType)) {
                 try {
-                    // Read file from storage to calculate duration
-                    // Use fs.readFile directly to get binary buffer (SojebStorage.get() uses UTF-8 encoding)
                     const storagePath = path.join(process.cwd(), 'public', 'storage', finalFilePath);
-                    const fileBuffer = fs.readFileSync(storagePath);
-                    videoLength = await this.videoDurationService.calculateVideoLength(fileBuffer, dto.fileName);
+                    videoLength = await this.videoDurationService.calculateVideoLengthFromPath(storagePath, dto.fileName);
                     this.logger.log(`📹 Video duration calculated: ${videoLength} for ${finalFileName}`);
                 } catch (error) {
                     this.logger.error(`Failed to calculate video duration: ${error.message}`);

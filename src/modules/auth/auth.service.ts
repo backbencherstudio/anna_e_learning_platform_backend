@@ -19,7 +19,7 @@ export class AuthService {
     private jwtService: JwtService,
     private prisma: PrismaService,
     private mailService: MailService,
-  ) {}
+  ) { }
 
   async me(userId: string) {
     try {
@@ -224,9 +224,19 @@ export class AuthService {
 
   async login({ email, userId }) {
     try {
+      const user = await UserRepository.getUserDetails(userId);
+
+      // if (user.type !== 'admin' && !user.email_verified_at) {
+      //   return {
+      //     success: false,
+      //     message: 'Your email is not verified.',
+      //     data: {
+      //       requires_verification: true,
+      //     },
+      //   };
+      // }
       const payload = { email: email, sub: userId };
       const token = this.jwtService.sign(payload);
-      const user = await UserRepository.getUserDetails(userId);
 
       return {
         success: true,
@@ -238,9 +248,9 @@ export class AuthService {
         type: user.type,
       };
     } catch (error) {
-              console.log('============error.message========================');
-        console.log(error.message);
-        console.log('====================================');
+      console.log('============error.message========================');
+      console.log(error.message);
+      console.log('====================================');
       return {
         success: false,
         message: error.message,
@@ -317,7 +327,6 @@ export class AuthService {
         userId: user.data.id,
         isOtp: true,
       });
-
       // send otp code to email
       await this.mailService.sendOtpCodeToEmail({
         email: email,

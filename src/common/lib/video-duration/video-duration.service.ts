@@ -89,6 +89,49 @@ export class VideoDurationService {
     }
 
     /**
+     * Calculate video length directly from file path (avoids loading into memory)
+     * @param filePath - Absolute path to the video file
+     * @param originalName - Original filename for logging/fallback estimation
+     */
+    async calculateVideoLengthFromPath(filePath: string, originalName?: string): Promise<string | null> {
+        try {
+            this.logger.log(`Starting video length calculation from path: ${filePath}`);
+
+            if (!filePath || !fs.existsSync(filePath)) {
+                this.logger.warn(`File path does not exist for video length calculation: ${filePath}`);
+                return null;
+            }
+
+            const lengthInSeconds = await this.getVideoLengthFromFile(filePath);
+
+            if (lengthInSeconds !== null && lengthInSeconds > 0) {
+                const formattedLength = this.formatDuration(lengthInSeconds);
+                this.logger.log(`Video length (from path) calculated: ${formattedLength}`);
+                return formattedLength;
+            }
+
+            this.logger.warn(`FFprobe returned invalid length for path: ${filePath}`);
+
+            // Fallback estimation using file size
+            const fileStats = fs.statSync(filePath);
+            const estimatedLength = this.estimateVideoLengthFromSize(
+                fileStats.size,
+                originalName || path.basename(filePath),
+            );
+
+            if (estimatedLength) {
+                this.logger.log(`Using estimated length from path: ${estimatedLength}`);
+                return estimatedLength;
+            }
+
+            return null;
+        } catch (error) {
+            this.logger.error(`Error calculating video length from path: ${error.message}`, error.stack);
+            return null;
+        }
+    }
+
+    /**
      * Get video length from file path using ffprobe
      * @param filePath - Path to the video file
      * @returns Promise<number> - Length in seconds

@@ -22,8 +22,13 @@ export class StripeController {
       }
 
       const payload = req.rawBody.toString();
+      console.log("====================================payload====================================");
+      console.log(payload);
+      console.log("====================================payload====================================");
       const event = await this.stripeService.handleWebhook(payload, signature);
-
+      console.log("====================================event====================================");
+      console.log(event.type);
+      console.log("====================================event====================================");
       // Handle events
       switch (event.type) {
         case 'customer.created':
@@ -44,9 +49,6 @@ export class StripeController {
             paid_currency: paymentIntent.currency,
             raw_status: paymentIntent.status,
           });
-
-          // Handle payment success - unlock first lesson
-          //await this.seriesService.unlockFirstLessonForUser(paymentIntent.id);
           break;
         case 'payment_intent.payment_failed':
           const failedPaymentIntent = event.data.object;
@@ -56,6 +58,7 @@ export class StripeController {
             status: 'failed',
             raw_status: failedPaymentIntent.status,
           });
+          break;
         case 'payment_intent.canceled':
           const canceledPaymentIntent = event.data.object;
           // Update transaction status in database
