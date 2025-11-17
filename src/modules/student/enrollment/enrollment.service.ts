@@ -174,11 +174,6 @@ export class EnrollmentService {
             const enrichedEnrollments = enrollments.map(enrollment => {
                 const seriesData = enrollment.series;
 
-                // Add thumbnail URL
-                if (seriesData.thumbnail) {
-                    seriesData['thumbnail_url'] = `https://your-storage-url.com/series-thumbnails/${seriesData.thumbnail}`;
-                }
-
                 return {
                     id: enrollment.id,
                     status: enrollment.status,
