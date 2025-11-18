@@ -33,6 +33,13 @@ async function bootstrap() {
   app.use(require('express').json({ limit: '100mb' }));
   app.use(require('express').urlencoded({ limit: '100mb', extended: true }));
 
+  // Line 34 এর পরে add করুন:
+  app.use((req, res, next) => {
+    req.setTimeout(60 * 60 * 1000); // 60 minutes for large uploads
+    res.setTimeout(60 * 60 * 1000);
+    next();
+  })
+
 
   // Configure CORS to handle preflight requests properly
   app.enableCors({

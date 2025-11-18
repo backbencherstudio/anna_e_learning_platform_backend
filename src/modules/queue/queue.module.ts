@@ -9,6 +9,9 @@ import { AssignmentPublishService } from './services/assignment-publish.service'
 import { PrismaModule } from '../../prisma/prisma.module';
 import { TeacherSectionPublishService } from './teacher-section-publish.service';
 import { TeacherSectionPublishProcessor } from './processors/teacher-section-publish.processor';
+import { VideoDurationProcessor } from './processors/video-duration.processor';
+import { VideoDurationService } from './services/video-duration.service';
+import { VideoDurationService as VideoDurationCalculationService } from '../../common/lib/video-duration/video-duration.service';
 
 @Module({
     imports: [
@@ -24,6 +27,9 @@ import { TeacherSectionPublishProcessor } from './processors/teacher-section-pub
         BullModule.registerQueue({
             name: 'teacher-section-publish',
         }),
+        BullModule.registerQueue({
+            name: 'video-duration',
+        }),
         PrismaModule,
     ],
     providers: [
@@ -35,6 +41,9 @@ import { TeacherSectionPublishProcessor } from './processors/teacher-section-pub
         AssignmentPublishService,
         TeacherSectionPublishProcessor,
         TeacherSectionPublishService,
+        VideoDurationProcessor,
+        VideoDurationService,
+        VideoDurationCalculationService,
     ],
     exports: [
         BullModule,
@@ -43,6 +52,7 @@ import { TeacherSectionPublishProcessor } from './processors/teacher-section-pub
         AssignmentPublishService,
         TeacherSectionPublishProcessor,
         TeacherSectionPublishService,
+        VideoDurationService,
     ],
 })
 export class QueueModule { }
