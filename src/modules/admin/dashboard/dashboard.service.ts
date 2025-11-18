@@ -3,7 +3,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { ScheduleEventService } from '../schedule-event/schedule-event.service';
 import { AssignmentService } from '../assignment/assignment.service';
 import { QuizService } from '../quiz/quiz.service';
-import { retry } from 'rxjs';
 
 @Injectable()
 export class DashboardService {
@@ -350,101 +349,12 @@ export class DashboardService {
      */
     async getRevenueChartData(period: 'week' | 'month' | 'year' = 'week') {
         try {
-
-            if (period === 'month') {
-                return {
-                    "summary": {
-                        "current_period_revenue": 8750.00,
-                        "previous_period_revenue": 6920.00,
-                        "growth_percentage": 26.45,
-                        "growth_direction": "up",
-                        "current_period_label": "This month",
-                        "previous_period_label": "Last month",
-                        "period_type": "month"
-                    },
-                    "chart_data": {
-                        "current_period": {
-                            "label": "This month",
-                            "data": [
-                                { "month": "Jan", "revenue": 440 },
-                                { "month": "Feb", "revenue": 350 },
-                                { "month": "Mar", "revenue": 400 },
-                                { "month": "Apr", "revenue": 400 },
-                                { "month": "May", "revenue": 450 },
-                                { "month": "Jun", "revenue": 500 },
-                                { "month": "Jul", "revenue": 550 },
-                                { "month": "Aug", "revenue": 600 },
-                                { "month": "Sep", "revenue": 650 },
-                                { "month": "Oct", "revenue": 650 },
-                                { "month": "Nov", "revenue": 700 },
-                                { "month": "Dec", "revenue": 750 }
-                            ]
-                        },
-                        "last_period": {
-                            "label": "Last month",
-                            "data": [
-                                { "month": "Jan", "revenue": 440 },
-                                { "month": "Feb", "revenue": 350 },
-                                { "month": "Mar", "revenue": 400 },
-                                { "month": "Apr", "revenue": 400 },
-                                { "month": "May", "revenue": 450 },
-                                { "month": "Jun", "revenue": 450 },
-                                { "month": "Jul", "revenue": 550 },
-                                { "month": "Aug", "revenue": 550 },
-                                { "month": "Sep", "revenue": 650 },
-                                { "month": "Oct", "revenue": 650 },
-                                { "month": "Nov", "revenue": 700 },
-                                { "month": "Dec", "revenue": 700 }
-                            ]
-                        }
-                    }
-                }
-            } else {
-                return {
-                    "summary": {
-                        "current_period_revenue": 1850.00,
-                        "previous_period_revenue": 1620.00,
-                        "growth_percentage": 14.20,
-                        "growth_direction": "up",
-                        "current_period_label": "This week",
-                        "previous_period_label": "Last week",
-                        "period_type": "week"
-                    },
-                    "chart_data": {
-                        "current_period": {
-                            "label": "This week",
-                            "data": [
-                                { "day": "Sun", "revenue": 280 },
-                                { "day": "Mon", "revenue": 280 },
-                                { "day": "Tue", "revenue": 320 },
-                                { "day": "Wed", "revenue": 450 },
-                                { "day": "Thu", "revenue": 390 },
-                                { "day": "Fri", "revenue": 410 },
-                                { "day": "Sat", "revenue": 410 }
-                            ]
-                        },
-                        "last_period": {
-                            "label": "Last week",
-                            "data": [
-                                { "day": "Sun", "revenue": 280 },
-                                { "day": "Mon", "revenue": 240 },
-                                { "day": "Tue", "revenue": 290 },
-                                { "day": "Wed", "revenue": 380 },
-                                { "day": "Thu", "revenue": 340 },
-                                { "day": "Fri", "revenue": 370 },
-                                { "day": "Sat", "revenue": 410 }
-                            ]
-                        }
-                    }
-                }
-            }
             const now = new Date();
             let currentPeriodStart: Date;
             let lastPeriodStart: Date;
             let lastPeriodEnd: Date;
             let currentPeriodLabel: string;
             let lastPeriodLabel: string;
-            let dateFormat: string;
 
             switch (period) {
                 case 'week':
@@ -464,7 +374,6 @@ export class DashboardService {
 
                     currentPeriodLabel = 'This week';
                     lastPeriodLabel = 'Last week';
-                    dateFormat = 'YYYY-MM-DD';
                     break;
 
                 case 'month':
@@ -475,7 +384,6 @@ export class DashboardService {
 
                     currentPeriodLabel = 'This month';
                     lastPeriodLabel = 'Last month';
-                    dateFormat = 'YYYY-MM-DD';
                     break;
 
                 case 'year':
@@ -486,7 +394,6 @@ export class DashboardService {
 
                     currentPeriodLabel = 'This year';
                     lastPeriodLabel = 'Last year';
-                    dateFormat = 'YYYY-MM';
                     break;
 
                 default:

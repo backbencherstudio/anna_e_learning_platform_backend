@@ -76,6 +76,9 @@ export class VideoDurationProcessor extends WorkerHost {
 
             this.logger.log(`Successfully updated ${videoType} video duration: ${videoLength} for course ${courseId}`);
 
+            // Update course total video_length (includes lesson files + intro + end videos)
+            await this.updateCourseVideoLength(courseId);
+
             // Update series totals
             await this.updateSeriesTotalsVideoLength(seriesId);
 
@@ -86,6 +89,51 @@ export class VideoDurationProcessor extends WorkerHost {
                 error.stack
             );
             // Don't re-throw - keep null in database
+        }
+    }
+
+    /**
+     * Update course total video length (lesson files + intro + end videos)
+     */
+    private async updateCourseVideoLength(courseId: string): Promise<void> {
+        try {
+            const course = await this.prisma.course.findUnique({
+                where: { id: courseId },
+                include: {
+                    lesson_files: {
+                        select: { video_length: true },
+                    },
+                },
+            });
+
+            if (!course) {
+                return;
+            }
+
+            // Collect all video lengths (lesson files + intro video + end video)
+            const allLengths: string[] = [];
+
+            // Add lesson file video lengths
+            if (course.lesson_files?.length) {
+                course.lesson_files.forEach(lesson => {
+                    if (lesson.video_length) allLengths.push(lesson.video_length);
+                });
+            }
+
+            // Add intro and end video lengths
+            if (course.intro_video_length) allLengths.push(course.intro_video_length);
+            if (course.end_video_length) allLengths.push(course.end_video_length);
+
+            if (allLengths.length > 0) {
+                const totalLength = this.videoDurationService.calculateTotalLength(allLengths);
+                await this.prisma.course.update({
+                    where: { id: courseId },
+                    data: { video_length: totalLength },
+                });
+                this.logger.log(`Updated course ${courseId} total video length: ${totalLength} (${allLengths.length} videos total)`);
+            }
+        } catch (error) {
+            this.logger.error(`Failed to update course video length for ${courseId}: ${error.message}`, error.stack);
         }
     }
 
