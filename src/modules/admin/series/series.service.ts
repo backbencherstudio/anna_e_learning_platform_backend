@@ -12,6 +12,7 @@ import { SeriesPublishService } from '../../queue/services/series-publish.servic
 import { CreateCourseDto } from './dto/create-course.dto';
 import { CreateLessonFileDto } from './dto/create-lesson-file.dto';
 import { UpdateCourseDto } from './dto/update-course.dto';
+import * as path from 'path';
 
 @Injectable()
 export class SeriesService {
@@ -1334,11 +1335,12 @@ export class SeriesService {
         introVideoUrl = StringHelper.generateRandomFileName(files.introVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, files.introVideo.buffer);
 
-        // Calculate intro video length
+        // Calculate intro video length using file path (more efficient for large files)
         if (this.videoDurationService.isVideoFile(files.introVideo.mimetype)) {
           try {
-            introVideoLength = await this.videoDurationService.calculateVideoLength(
-              files.introVideo.buffer,
+            const storagePath = path.join(process.cwd(), 'public', 'storage', appConfig().storageUrl.module_file + introVideoUrl);
+            introVideoLength = await this.videoDurationService.calculateVideoLengthFromPath(
+              storagePath,
               files.introVideo.originalname
             );
             this.logger.log(`📹 Intro video duration calculated: ${introVideoLength} for ${introVideoUrl}`);
@@ -1355,11 +1357,12 @@ export class SeriesService {
         endVideoUrl = StringHelper.generateRandomFileName(files.endVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, files.endVideo.buffer);
 
-        // Calculate end video length
+        // Calculate end video length using file path (more efficient for large files)
         if (this.videoDurationService.isVideoFile(files.endVideo.mimetype)) {
           try {
-            endVideoLength = await this.videoDurationService.calculateVideoLength(
-              files.endVideo.buffer,
+            const storagePath = path.join(process.cwd(), 'public', 'storage', appConfig().storageUrl.module_file + endVideoUrl);
+            endVideoLength = await this.videoDurationService.calculateVideoLengthFromPath(
+              storagePath,
               files.endVideo.originalname
             );
             this.logger.log(`📹 End video duration calculated: ${endVideoLength} for ${endVideoUrl}`);
@@ -1741,11 +1744,12 @@ export class SeriesService {
         introVideoUrl = StringHelper.generateRandomFileName(introVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + introVideoUrl, introVideo.buffer);
 
-        // Calculate intro video length
+        // Calculate intro video length using file path (more efficient for large files)
         if (this.videoDurationService.isVideoFile(introVideo.mimetype)) {
           try {
-            introVideoLength = await this.videoDurationService.calculateVideoLength(
-              introVideo.buffer,
+            const storagePath = path.join(process.cwd(), 'public', 'storage', appConfig().storageUrl.module_file + introVideoUrl);
+            introVideoLength = await this.videoDurationService.calculateVideoLengthFromPath(
+              storagePath,
               introVideo.originalname
             );
             this.logger.log(`📹 Intro video duration calculated: ${introVideoLength} for ${introVideoUrl}`);
@@ -1772,11 +1776,12 @@ export class SeriesService {
         endVideoUrl = StringHelper.generateRandomFileName(endVideo.originalname);
         await SojebStorage.put(appConfig().storageUrl.module_file + endVideoUrl, endVideo.buffer);
 
-        // Calculate end video length
+        // Calculate end video length using file path (more efficient for large files)
         if (this.videoDurationService.isVideoFile(endVideo.mimetype)) {
           try {
-            endVideoLength = await this.videoDurationService.calculateVideoLength(
-              endVideo.buffer,
+            const storagePath = path.join(process.cwd(), 'public', 'storage', appConfig().storageUrl.module_file + endVideoUrl);
+            endVideoLength = await this.videoDurationService.calculateVideoLengthFromPath(
+              storagePath,
               endVideo.originalname
             );
             this.logger.log(`📹 End video duration calculated: ${endVideoLength} for ${endVideoUrl}`);
